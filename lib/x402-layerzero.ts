@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any */
 // LayerZero Cross-Chain Messaging for x402
 // Based on Omnix402 implementation
 

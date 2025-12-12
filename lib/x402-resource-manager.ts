@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // x402 Resource Registration and Management System
 // Based on x402scan implementation
 

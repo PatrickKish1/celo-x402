@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // Real CDP x402 Payment Processor Service
 // Handles payment verification and settlement through CDP facilitator
 

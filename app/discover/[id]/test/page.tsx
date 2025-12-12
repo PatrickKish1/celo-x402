@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import { Header } from '../../../../components/ui/header';
@@ -57,16 +58,16 @@ export default function ApiTestPage() {
           const defaultBody: Record<string, any> = {};
           const defaultParams: Record<string, string> = {};
           
-          if (schema.headerFields) {
-            Object.entries(schema.headerFields).forEach(([key, field]: [string, any]) => {
+          if (schema && typeof schema === 'object' && 'headerFields' in schema) {
+            Object.entries((schema as any).headerFields).forEach(([key, field]: [string, any]) => {
               if (!field.required) {
                 defaultHeaders[key] = field.description || '';
               }
             });
           }
           
-          if (schema.bodyFields) {
-            Object.entries(schema.bodyFields).forEach(([key, field]: [string, any]) => {
+          if (schema && typeof schema === 'object' && 'bodyFields' in schema) {
+            Object.entries((schema as any).bodyFields).forEach(([key, field]: [string, any]) => {
               if (field.default !== undefined) {
                 defaultBody[key] = field.default;
               }

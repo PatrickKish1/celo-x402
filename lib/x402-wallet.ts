@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any */
 // x402 Wallet Integration and Payment Flow
 // Client-side utilities for wallet connection and payment signing
 

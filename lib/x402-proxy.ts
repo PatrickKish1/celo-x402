@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // x402 API Proxy Service
 // Handles proxying requests to upstream x402-protected APIs
 

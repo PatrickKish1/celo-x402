@@ -199,9 +199,9 @@ export default function NetworkDemoPage() {
     centerY: number
   ) => {
     // Apply rotation
-    let x = node.x;
-    let y = node.y;
-    let z = node.z;
+    const x = node.x;
+    const y = node.y;
+    const z = node.z;
 
     // Rotate around Y axis
     const cosY = Math.cos(rot.y);

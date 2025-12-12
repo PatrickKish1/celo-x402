@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any */
 // Squid Router Integration for Cross-Chain Token Swaps
 // Documentation: https://docs.squidrouter.com
 

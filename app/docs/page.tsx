@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { Header } from '../../components/ui/header';
 import { Footer } from '../../components/ui/footer';
 import { useState } from 'react';
@@ -203,9 +204,9 @@ export default function DocsPage() {
                     <h4 className="font-mono font-bold mb-2">FOR BUYERS</h4>
                     <ul className="space-y-2 text-sm">
                       <li>
-                        <a href="/discover" className="text-blue-600 hover:underline font-mono">
+                        <Link href="/discover" className="text-blue-600 hover:underline font-mono">
                           • Browse available APIs
-                        </a>
+                        </Link>
                       </li>
                       <li>
                         <a href="https://github.com/coinbase/x402/tree/main/packages/typescript" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-mono">
@@ -228,7 +229,7 @@ export default function DocsPage() {
                   NEED HELP?
                 </h3>
                 <p className="text-gray-700 mb-4">
-                  If you need assistance with the platform or have questions about x402 integration, we're here to help.
+                  If you need assistance with the platform or have questions about x402 integration, we&apos;re here to help.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-4">
                   <a

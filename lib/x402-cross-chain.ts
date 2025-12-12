@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // Cross-Chain Payment Routing Service
 // Supports multiple networks and cross-chain payments via LayerZero
 // Inspired by Omnix402 implementation

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { useState } from 'react';
 import { WalletButton, NetworkSwitcher } from '../wallet-button';
 
@@ -13,9 +14,11 @@ export function Header() {
         <div className="flex items-center justify-between">
           {/* Logo - Responsive */}
           <Link href="/" className="flex items-center space-x-2 sm:space-x-3">
-            <img 
+            <Image 
               src="/1x402.png" 
               alt="x402 Logo" 
+              width={32}
+              height={32}
               className="h-6 w-6 sm:h-8 sm:w-8"
             />
             <span className="text-lg sm:text-xl font-bold font-mono tracking-wider">

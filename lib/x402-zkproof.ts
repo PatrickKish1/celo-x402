@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // zkProof Verification Support for x402
 // Privacy-preserving payments with Zero-Knowledge Proofs
 // Based on zkx402 implementation

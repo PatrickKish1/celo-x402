@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any */
 // x402 Service for live API integration
 import { x402Discovery } from './x402-discovery';
 

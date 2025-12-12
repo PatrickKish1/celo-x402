@@ -1,3 +1,6 @@
+import Image from 'next/image';
+import Link from 'next/link';
+
 export function Footer() {
   return (
     <footer className="border-t-2 border-black bg-white py-12">
@@ -6,9 +9,11 @@ export function Footer() {
           {/* Brand Section */}
           <div className="col-span-1 md:col-span-2">
             <div className="flex items-center space-x-3 mb-4">
-              <img 
+              <Image 
                 src="/1x402.png" 
                 alt="x402 Logo" 
+                width={32}
+                height={32}
                 className="h-8 w-8"
               />
               <span className="text-xl font-bold font-mono tracking-wider">
@@ -28,14 +33,14 @@ export function Footer() {
             </h3>
             <ul className="space-y-2">
               <li>
-                <a href="/discover" className="font-mono text-sm text-gray-600 hover:text-black transition-colors">
+                <Link href="/discover" className="font-mono text-sm text-gray-600 hover:text-black transition-colors">
                   DISCOVER APIS
-                </a>
+                </Link>
               </li>
               <li>
-                <a href="/dashboard" className="font-mono text-sm text-gray-600 hover:text-black transition-colors">
+                <Link href="/dashboard" className="font-mono text-sm text-gray-600 hover:text-black transition-colors">
                   DASHBOARD
-                </a>
+                </Link>
               </li>
               <li>
                 <a href="/docs" className="font-mono text-sm text-gray-600 hover:text-black transition-colors">

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars, prefer-const */
 // Real CDP x402 Bazaar Discovery Service
 import { X402Service, X402PaymentRequirement, X402BazaarResponse } from './x402-service';
 import { rateLimiters } from './rate-limiter';

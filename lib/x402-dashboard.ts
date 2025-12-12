@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // Dashboard Service - Live data with localStorage caching
 import { x402Discovery } from './x402-discovery';
 import { x402ResourceManager } from './x402-resource-manager';

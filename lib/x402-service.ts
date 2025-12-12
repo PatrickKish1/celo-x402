@@ -1,4 +1,6 @@
 // x402 Service for live API integration
+import { x402Discovery } from './x402-discovery';
+
 export interface X402Service {
   resource: string;
   type: string;
@@ -36,9 +38,6 @@ export interface X402BazaarResponse {
   total: number;
 }
 
-// CDP x402 Bazaar API endpoint
-const X402_BAZAAR_URL = 'https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources';
-
 export class X402ServiceManager {
   private static instance: X402ServiceManager;
   private cache: Map<string, { data: X402Service; timestamp: number }> = new Map();
@@ -51,24 +50,17 @@ export class X402ServiceManager {
     return X402ServiceManager.instance;
   }
 
+  /**
+   * Fetch live services from CDP x402 Bazaar
+   * Now uses the real discovery service
+   */
   async fetchLiveServices(): Promise<X402Service[]> {
     try {
-      const response = await fetch(X402_BAZAAR_URL, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch x402 services: ${response.status}`);
-      }
-
-      const data: X402BazaarResponse = await response.json();
-      return data.items || [];
+      // Use the real discovery service
+      return await x402Discovery.fetchLiveServices();
     } catch (error) {
       console.error('Error fetching x402 services:', error);
-      // Return empty array on error, fallback to mock data
+      // Return empty array on error, UI will handle fallback
       return [];
     }
   }
@@ -95,47 +87,17 @@ export class X402ServiceManager {
     }
   }
 
+  /**
+   * Search services with advanced filtering
+   * Now uses the real discovery service
+   */
   async searchServices(query: string, filters?: {
     maxPrice?: number;
     network?: string;
     type?: string;
   }): Promise<X402Service[]> {
     try {
-      const services = await this.fetchLiveServices();
-      
-      let filtered = services.filter(service => {
-        // Text search in resource URL and metadata
-        const searchText = `${service.resource} ${JSON.stringify(service.metadata)}`.toLowerCase();
-        if (!searchText.includes(query.toLowerCase())) {
-          return false;
-        }
-
-        // Price filter
-        if (filters?.maxPrice) {
-          const hasAffordableOption = service.accepts.some(accept => {
-            const price = parseInt(accept.maxAmountRequired) / 1000000; // USDC has 6 decimals
-            return price <= filters.maxPrice!;
-          });
-          if (!hasAffordableOption) return false;
-        }
-
-        // Network filter
-        if (filters?.network) {
-          const hasNetwork = service.accepts.some(accept => 
-            accept.network === filters.network
-          );
-          if (!hasNetwork) return false;
-        }
-
-        // Type filter
-        if (filters?.type && service.type !== filters.type) {
-          return false;
-        }
-
-        return true;
-      });
-
-      return filtered;
+      return await x402Discovery.searchServices(query, filters);
     } catch (error) {
       console.error('Error searching services:', error);
       return [];

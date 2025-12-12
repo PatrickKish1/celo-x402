@@ -1,61 +1,46 @@
 'use client';
 
 import { Header } from '../../components/ui/header';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-
-// Mock data for demonstration
-const mockServices = [
-  {
-    id: '1',
-    name: 'Weather Data API',
-    status: 'active',
-    upstreamUrl: 'https://api.weather.com/v1',
-    proxyUrl: 'https://x402.yourdomain.com/svc/weather',
-    endpoints: 3,
-    totalCalls: 15420,
-    totalRevenue: 771.00,
-    discoverable: true,
-    createdAt: '2024-01-15'
-  },
-  {
-    id: '2',
-    name: 'Financial Market Data',
-    status: 'active',
-    upstreamUrl: 'https://api.finance.com/v2',
-    proxyUrl: 'https://x402.yourdomain.com/svc/finance',
-    endpoints: 8,
-    totalCalls: 89230,
-    totalRevenue: 8923.00,
-    discoverable: true,
-    createdAt: '2024-01-10'
-  },
-  {
-    id: '3',
-    name: 'Internal Analytics API',
-    status: 'inactive',
-    upstreamUrl: 'https://internal.company.com/api',
-    proxyUrl: 'https://x402.yourdomain.com/svc/analytics',
-    endpoints: 5,
-    totalCalls: 0,
-    totalRevenue: 0.00,
-    discoverable: false,
-    createdAt: '2024-01-20'
-  }
-];
-
-const mockStats = {
-  totalServices: 3,
-  activeServices: 2,
-  totalCalls: 104650,
-  totalRevenue: 9694.00,
-  monthlyCalls: 15420,
-  monthlyRevenue: 771.00
-};
+import { x402Dashboard, type DashboardStats, type ServiceData, type ActivityItem } from '../../lib/x402-dashboard';
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState('overview');
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [stats, setStats] = useState<DashboardStats>({
+    totalServices: 0,
+    activeServices: 0,
+    totalCalls: 0,
+    totalRevenue: 0,
+    monthlyCalls: 0,
+    monthlyRevenue: 0,
+  });
+  const [services, setServices] = useState<ServiceData[]>([]);
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      const [statsData, servicesData, activityData] = await Promise.all([
+        x402Dashboard.getDashboardStats(),
+        x402Dashboard.getServices(),
+        x402Dashboard.getActivity(),
+      ]);
+      
+      setStats(statsData);
+      setServices(servicesData);
+      setActivity(activityData);
+    } catch (error) {
+      console.error('Error loading dashboard:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -85,7 +70,7 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <div className="retro-card text-center">
               <div className="text-3xl font-bold font-mono mb-2">
-                {mockStats.totalServices}
+                {loading ? '...' : stats.totalServices}
               </div>
               <div className="text-sm font-mono text-gray-600 uppercase tracking-wide">
                 TOTAL SERVICES
@@ -94,7 +79,7 @@ export default function DashboardPage() {
             
             <div className="retro-card text-center">
               <div className="text-3xl font-bold font-mono mb-2">
-                {mockStats.totalCalls.toLocaleString()}
+                {loading ? '...' : stats.totalCalls.toLocaleString()}
               </div>
               <div className="text-sm font-mono text-gray-600 uppercase tracking-wide">
                 TOTAL CALLS
@@ -103,7 +88,7 @@ export default function DashboardPage() {
             
             <div className="retro-card text-center">
               <div className="text-3xl font-bold font-mono mb-2">
-                ${mockStats.totalRevenue.toLocaleString()}
+                ${loading ? '...' : stats.totalRevenue.toLocaleString()}
               </div>
               <div className="text-sm font-mono text-gray-600 uppercase tracking-wide">
                 TOTAL REVENUE
@@ -112,7 +97,7 @@ export default function DashboardPage() {
             
             <div className="retro-card text-center">
               <div className="text-3xl font-bold font-mono mb-2">
-                ${mockStats.monthlyRevenue.toLocaleString()}
+                ${loading ? '...' : stats.monthlyRevenue.toLocaleString()}
               </div>
               <div className="text-sm font-mono text-gray-600 uppercase tracking-wide">
                 THIS MONTH
@@ -151,47 +136,63 @@ export default function DashboardPage() {
                 <h3 className="text-xl font-bold font-mono mb-4 tracking-wide">
                   RECENT ACTIVITY
                 </h3>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between py-3 border-b border-gray-200">
-                    <div>
-                      <div className="font-mono font-bold">Weather API Call</div>
-                      <div className="text-sm text-gray-600">0x742d...b6 called /weather/current</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-mono font-bold">+0.05 USDC</div>
-                      <div className="text-sm text-gray-600">2 minutes ago</div>
-                    </div>
+                {loading ? (
+                  <div className="text-center py-8 text-gray-600 font-mono">Loading...</div>
+                ) : activity.length === 0 ? (
+                  <div className="text-center py-8 text-gray-600 font-mono">
+                    No recent activity. Start using your APIs to see activity here.
                   </div>
-                  
-                  <div className="flex items-center justify-between py-3 border-b border-gray-200">
-                    <div>
-                      <div className="font-mono font-bold">Finance API Call</div>
-                      <div className="text-sm text-gray-600">0x8ba1...44 called /stocks/price</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-mono font-bold">+0.10 USDC</div>
-                      <div className="text-sm text-gray-600">15 minutes ago</div>
-                    </div>
+                ) : (
+                  <div className="space-y-4">
+                    {activity.slice(0, 10).map((item, index) => (
+                      <div key={index} className="flex items-center justify-between py-3 border-b border-gray-200 last:border-0">
+                        <div>
+                          <div className="font-mono font-bold">
+                            {item.type === 'call' ? `${item.serviceName} API Call` : 
+                             item.type === 'create' ? 'New Service Created' : 
+                             'Service Updated'}
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            {item.address && item.endpoint ? 
+                              `${item.address.slice(0, 8)}...${item.address.slice(-4)} called ${item.endpoint}` :
+                              item.serviceName}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-mono font-bold">
+                            {item.revenue ? `+${item.revenue.toFixed(6)} USDC` : '-'}
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            {new Date(item.timestamp).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  
-                  <div className="flex items-center justify-between py-3">
-                    <div>
-                      <div className="font-mono font-bold">New Service Created</div>
-                      <div className="text-sm text-gray-600">Internal Analytics API</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-mono font-bold">-</div>
-                      <div className="text-sm text-gray-600">1 hour ago</div>
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
           )}
 
           {activeTab === 'services' && (
             <div className="space-y-6">
-              {mockServices.map(service => (
+              {loading ? (
+                <div className="retro-card text-center py-8 text-gray-600 font-mono">
+                  Loading services...
+                </div>
+              ) : services.length === 0 ? (
+                <div className="retro-card text-center py-12">
+                  <h3 className="text-xl font-bold font-mono mb-4">No Services Yet</h3>
+                  <p className="text-gray-600 font-mono mb-6">
+                    Create your first x402-enabled API to get started
+                  </p>
+                  <Link href="/dashboard/create" className="retro-button">
+                    CREATE NEW API
+                  </Link>
+                </div>
+              ) : (
+                <>
+                  {services.map(service => (
                 <div key={service.id} className="retro-card">
                   <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4">
                     <div className="flex-1">
@@ -278,6 +279,8 @@ export default function DashboardPage() {
                   </div>
                 </div>
               ))}
+                </>
+              )}
             </div>
           )}
 
@@ -300,7 +303,7 @@ export default function DashboardPage() {
                     <div className="h-8 w-8 bg-green-500 rounded-full animate-pulse"></div>
                   </div>
                   <div className="text-2xl font-bold font-mono text-green-600 mb-2">
-                    {mockStats.activeServices}
+                    {stats.activeServices}
                   </div>
                   <div className="text-sm font-mono text-gray-600 uppercase tracking-wide">
                     HEALTHY APIS
@@ -312,7 +315,7 @@ export default function DashboardPage() {
                     <div className="h-8 w-8 bg-red-500 rounded-full animate-pulse"></div>
                   </div>
                   <div className="text-2xl font-bold font-mono text-red-600 mb-2">
-                    {mockStats.totalServices - mockStats.activeServices}
+                    {stats.totalServices - stats.activeServices}
                   </div>
                   <div className="text-sm font-mono text-gray-600 uppercase tracking-wide">
                     FAILED/INACTIVE
@@ -324,7 +327,7 @@ export default function DashboardPage() {
                     <div className="h-8 w-8 bg-blue-500 rounded-full animate-pulse"></div>
                   </div>
                   <div className="text-2xl font-bold font-mono text-blue-600 mb-2">
-                    {((mockStats.activeServices / mockStats.totalServices) * 100).toFixed(1)}%
+                    {stats.totalServices > 0 ? ((stats.activeServices / stats.totalServices) * 100).toFixed(1) : '0'}%
                   </div>
                   <div className="text-sm font-mono text-gray-600 uppercase tracking-wide">
                     UPTIME RATE

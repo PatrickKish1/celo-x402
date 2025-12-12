@@ -50,11 +50,42 @@ export default function ApiTestPage() {
           setService(serviceData);
           // Pre-populate the test request with service details
           const primaryPayment = serviceData.accepts[0];
+          const schema = primaryPayment.outputSchema.input;
+          
+          // Pre-populate headers and params from schema if available
+          const defaultHeaders: Record<string, string> = {};
+          const defaultBody: Record<string, any> = {};
+          const defaultParams: Record<string, string> = {};
+          
+          if (schema.headerFields) {
+            Object.entries(schema.headerFields).forEach(([key, field]: [string, any]) => {
+              if (!field.required) {
+                defaultHeaders[key] = field.description || '';
+              }
+            });
+          }
+          
+          if (schema.bodyFields) {
+            Object.entries(schema.bodyFields).forEach(([key, field]: [string, any]) => {
+              if (field.default !== undefined) {
+                defaultBody[key] = field.default;
+              }
+            });
+          }
+          
           setTestRequest(prev => ({
             ...prev,
-            method: primaryPayment.outputSchema.input.method,
-            url: primaryPayment.resource
+            method: schema.method,
+            url: primaryPayment.resource,
+            headers: defaultHeaders,
+            body: Object.keys(defaultBody).length > 0 ? JSON.stringify(defaultBody, null, 2) : '',
+            params: defaultParams
           }));
+          
+          // Auto-show headers/params if schema defines them
+          if (schema.headerFields && Object.keys(schema.headerFields).length > 0) {
+            setShowHeaders(true);
+          }
         }
       } catch (err) {
         console.error('Error fetching service:', err);
@@ -397,18 +428,57 @@ export default function ApiTestPage() {
                   )}
                 </div>
 
-                {/* Request Body */}
+                {/* Schema-based Body Fields */}
+                {testRequest.method !== 'GET' && service && service.accepts[0].outputSchema.input.bodyFields && (
+                  <div className="mb-4">
+                    <label className="block font-mono font-bold text-sm mb-2">
+                      REQUEST BODY FIELDS
+                    </label>
+                    <div className="space-y-3 p-3 border-2 border-gray-300 bg-gray-50">
+                      {Object.entries(service.accepts[0].outputSchema.input.bodyFields).map(([fieldName, fieldSchema]: [string, any]) => (
+                        <div key={fieldName}>
+                          <label className="block text-xs font-mono mb-1">
+                            {fieldName.toUpperCase()}
+                            {fieldSchema.required && <span className="text-red-600">*</span>}
+                          </label>
+                          <input
+                            type="text"
+                            placeholder={fieldSchema.description || fieldName}
+                            defaultValue={fieldSchema.default || ''}
+                            onChange={(e) => {
+                              try {
+                                const bodyObj = testRequest.body ? JSON.parse(testRequest.body) : {};
+                                bodyObj[fieldName] = e.target.value;
+                                setTestRequest(prev => ({ ...prev, body: JSON.stringify(bodyObj, null, 2) }));
+                              } catch {
+                                const bodyObj: Record<string, any> = {};
+                                bodyObj[fieldName] = e.target.value;
+                                setTestRequest(prev => ({ ...prev, body: JSON.stringify(bodyObj, null, 2) }));
+                              }
+                            }}
+                            className="retro-input w-full text-sm"
+                          />
+                          {fieldSchema.description && (
+                            <p className="text-xs text-gray-600 mt-1">{fieldSchema.description}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Raw Request Body (Advanced) */}
                 {testRequest.method !== 'GET' && (
                   <div className="mb-4">
                     <label className="block font-mono font-bold text-sm mb-2">
-                      REQUEST BODY
+                      RAW REQUEST BODY (Advanced)
                     </label>
                     <textarea
                       value={testRequest.body}
                       onChange={(e) => setTestRequest(prev => ({ ...prev, body: e.target.value }))}
                       placeholder="Enter JSON request body..."
                       rows={6}
-                      className="retro-input w-full"
+                      className="retro-input w-full text-xs font-mono"
                     />
                   </div>
                 )}

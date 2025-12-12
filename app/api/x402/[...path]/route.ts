@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { x402Payment } from '../../../../lib/x402-payment';
+import { x402PaymentProcessor } from '../../../../lib/x402-payment-processor';
 
 export async function GET(
   request: NextRequest,
@@ -10,37 +10,85 @@ export async function GET(
     const path = params.path.join('/');
     
     // Check for x402 payment header
-    const paymentHeader = request.headers.get('x-payment');
+    const paymentHeaderRaw = request.headers.get('x-payment');
     
-    if (!paymentHeader) {
+    if (!paymentHeaderRaw) {
       // Return 402 Payment Required with payment instructions
-      const paymentHeaderValue = x402Payment.generatePaymentHeader('50000', '100000', 300);
+      const paymentHeader = x402PaymentProcessor.generatePaymentHeader(
+        '50000',
+        '100000',
+        'base',
+        process.env.RECEIVER_WALLET || '0xYourWalletAddress',
+        300
+      );
       
-      return new NextResponse('Payment Required', {
+      return new NextResponse(JSON.stringify({
+        x402Version: 1,
+        accepts: [{
+          scheme: 'exact',
+          network: 'base',
+          maxAmountRequired: '50000',
+          resource: request.url,
+          description: 'Access to x402-protected API endpoint',
+          mimeType: 'application/json',
+          payTo: process.env.RECEIVER_WALLET || '0xYourWalletAddress',
+          maxTimeoutSeconds: 300,
+          asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // USDC on Base
+          extra: {
+            name: 'USD Coin',
+            version: '2'
+          }
+        }],
+        error: 'Payment Required'
+      }), {
         status: 402,
         headers: {
-          'x-payment': paymentHeaderValue,
           'content-type': 'application/json',
-          'x-payment-response': JSON.stringify({
-            status: 'payment_required',
-            message: 'This endpoint requires x402 payment',
-            price: '0.05 USDC',
-            maxAmount: '0.10 USDC',
-            ttl: 300
-          })
+          'x-payment': paymentHeader,
         }
       });
     }
     
-    // Verify payment with facilitator
-    const clientProof = request.headers.get('x-payment-proof') || '';
-    const verificationResult = await x402Payment.verifyPayment(paymentHeader, clientProof);
+    // Parse payment payload
+    let paymentPayload;
+    try {
+      paymentPayload = JSON.parse(Buffer.from(paymentHeaderRaw, 'base64').toString());
+    } catch (error) {
+      return NextResponse.json(
+        { error: 'Invalid payment header format' },
+        { status: 400 }
+      );
+    }
+
+    // Build payment requirements
+    const paymentRequirements = {
+      x402Version: 1,
+      scheme: 'exact',
+      network: 'base',
+      maxAmountRequired: '50000',
+      resource: request.url,
+      description: 'Access to x402-protected API endpoint',
+      mimeType: 'application/json',
+      payTo: process.env.RECEIVER_WALLET || '0xYourWalletAddress',
+      maxTimeoutSeconds: 300,
+      asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      extra: {
+        name: 'USD Coin',
+        version: '2'
+      }
+    };
     
-    if (verificationResult.status !== 'success') {
+    // Process payment with real CDP facilitator
+    const paymentResult = await x402PaymentProcessor.processPayment(
+      paymentPayload,
+      paymentRequirements
+    );
+    
+    if (paymentResult.status !== 'success') {
       return NextResponse.json(
         { 
           error: 'Payment verification failed',
-          details: verificationResult.error 
+          details: paymentResult.error 
         },
         { status: 402 }
       );
@@ -52,12 +100,14 @@ export async function GET(
       path: path,
       timestamp: new Date().toISOString(),
       payment: {
-        amount: verificationResult.amount,
-        reference: verificationResult.reference,
-        transactionHash: verificationResult.transactionHash
+        amount: x402PaymentProcessor.formatUSDCAmount(paymentResult.amount),
+        reference: paymentResult.reference,
+        transactionHash: paymentResult.transactionHash,
+        payer: paymentResult.payer,
+        network: paymentResult.network
       },
       data: {
-        // Mock API response data
+        // Mock API response data - in production, this would proxy to real API
         endpoint: path,
         result: 'success',
         message: 'Your x402 payment has been processed and the requested resource is now available'
@@ -66,9 +116,10 @@ export async function GET(
       headers: {
         'x-payment-response': JSON.stringify({
           status: 'success',
-          amount: verificationResult.amount,
-          reference: verificationResult.reference,
-          timestamp: new Date().toISOString()
+          amount: paymentResult.amount,
+          reference: paymentResult.reference,
+          transactionHash: paymentResult.transactionHash,
+          timestamp: paymentResult.timestamp
         })
       }
     });
@@ -76,7 +127,7 @@ export async function GET(
   } catch (error) {
     console.error('x402 proxy error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
@@ -88,36 +139,84 @@ export async function POST(
 ) {
   try {
     const path = params.path.join('/');
-    const paymentHeader = request.headers.get('x-payment');
+    const paymentHeaderRaw = request.headers.get('x-payment');
     
-    if (!paymentHeader) {
-      const paymentHeaderValue = x402Payment.generatePaymentHeader('100000', '200000', 300);
+    if (!paymentHeaderRaw) {
+      const paymentHeader = x402PaymentProcessor.generatePaymentHeader(
+        '100000',
+        '200000',
+        'base',
+        process.env.RECEIVER_WALLET || '0xYourWalletAddress',
+        300
+      );
       
-      return new NextResponse('Payment Required', {
+      return new NextResponse(JSON.stringify({
+        x402Version: 1,
+        accepts: [{
+          scheme: 'exact',
+          network: 'base',
+          maxAmountRequired: '100000',
+          resource: request.url,
+          description: 'Access to x402-protected API endpoint (POST)',
+          mimeType: 'application/json',
+          payTo: process.env.RECEIVER_WALLET || '0xYourWalletAddress',
+          maxTimeoutSeconds: 300,
+          asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+          extra: {
+            name: 'USD Coin',
+            version: '2'
+          }
+        }],
+        error: 'Payment Required'
+      }), {
         status: 402,
         headers: {
-          'x-payment': paymentHeaderValue,
           'content-type': 'application/json',
-          'x-payment-response': JSON.stringify({
-            status: 'payment_required',
-            message: 'This endpoint requires x402 payment',
-            price: '0.10 USDC',
-            maxAmount: '0.20 USDC',
-            ttl: 300
-          })
+          'x-payment': paymentHeader,
         }
       });
     }
     
-    // Verify payment
-    const clientProof = request.headers.get('x-payment-proof') || '';
-    const verificationResult = await x402Payment.verifyPayment(paymentHeader, clientProof);
+    // Parse payment payload
+    let paymentPayload;
+    try {
+      paymentPayload = JSON.parse(Buffer.from(paymentHeaderRaw, 'base64').toString());
+    } catch (error) {
+      return NextResponse.json(
+        { error: 'Invalid payment header format' },
+        { status: 400 }
+      );
+    }
+
+    // Build payment requirements
+    const paymentRequirements = {
+      x402Version: 1,
+      scheme: 'exact',
+      network: 'base',
+      maxAmountRequired: '100000',
+      resource: request.url,
+      description: 'Access to x402-protected API endpoint (POST)',
+      mimeType: 'application/json',
+      payTo: process.env.RECEIVER_WALLET || '0xYourWalletAddress',
+      maxTimeoutSeconds: 300,
+      asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      extra: {
+        name: 'USD Coin',
+        version: '2'
+      }
+    };
     
-    if (verificationResult.status !== 'success') {
+    // Process payment
+    const paymentResult = await x402PaymentProcessor.processPayment(
+      paymentPayload,
+      paymentRequirements
+    );
+    
+    if (paymentResult.status !== 'success') {
       return NextResponse.json(
         { 
           error: 'Payment verification failed',
-          details: verificationResult.error 
+          details: paymentResult.error 
         },
         { status: 402 }
       );
@@ -133,9 +232,11 @@ export async function POST(
       body: body,
       timestamp: new Date().toISOString(),
       payment: {
-        amount: verificationResult.amount,
-        reference: verificationResult.reference,
-        transactionHash: verificationResult.transactionHash
+        amount: x402PaymentProcessor.formatUSDCAmount(paymentResult.amount),
+        reference: paymentResult.reference,
+        transactionHash: paymentResult.transactionHash,
+        payer: paymentResult.payer,
+        network: paymentResult.network
       },
       result: {
         status: 'success',
@@ -150,9 +251,10 @@ export async function POST(
       headers: {
         'x-payment-response': JSON.stringify({
           status: 'success',
-          amount: verificationResult.amount,
-          reference: verificationResult.reference,
-          timestamp: new Date().toISOString()
+          amount: paymentResult.amount,
+          reference: paymentResult.reference,
+          transactionHash: paymentResult.transactionHash,
+          timestamp: paymentResult.timestamp
         })
       }
     });
@@ -160,7 +262,7 @@ export async function POST(
   } catch (error) {
     console.error('x402 proxy error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }

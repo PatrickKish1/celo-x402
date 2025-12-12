@@ -5,6 +5,8 @@ import { Footer } from '../../../components/ui/footer';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { X402Service, x402Service } from '../../../lib/x402-service';
+import { DocumentationModal } from '../../../components/documentation-modal';
+import { IntegrationModal } from '../../../components/integration-modal';
 import Link from 'next/link';
 
 export default function ServiceDetailsPage() {
@@ -13,6 +15,8 @@ export default function ServiceDetailsPage() {
   const [service, setService] = useState<X402Service | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showDocumentation, setShowDocumentation] = useState(false);
+  const [showIntegration, setShowIntegration] = useState(false);
 
   useEffect(() => {
     async function fetchServiceDetails() {
@@ -227,13 +231,35 @@ export default function ServiceDetailsPage() {
             >
               TEST API
             </Link>
-            <button className="retro-button flex-1 bg-gray-100">
+            <button 
+              onClick={() => setShowDocumentation(true)}
+              className="retro-button flex-1 bg-gray-100"
+            >
               VIEW DOCUMENTATION
             </button>
-            <button className="retro-button flex-1 bg-gray-100">
+            <button 
+              onClick={() => setShowIntegration(true)}
+              className="retro-button flex-1 bg-gray-100"
+            >
               INTEGRATE
             </button>
           </div>
+
+          {/* Modals */}
+          {service && (
+            <>
+              <DocumentationModal
+                isOpen={showDocumentation}
+                onClose={() => setShowDocumentation(false)}
+                service={service}
+              />
+              <IntegrationModal
+                isOpen={showIntegration}
+                onClose={() => setShowIntegration(false)}
+                service={service}
+              />
+            </>
+          )}
 
           {/* Metadata */}
           {Object.keys(service.metadata).length > 0 && (

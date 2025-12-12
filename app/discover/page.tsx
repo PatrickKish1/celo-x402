@@ -4,97 +4,55 @@ import { Header } from '../../components/ui/header';
 import { useState, useEffect } from 'react';
 import { X402Service, x402Service } from '../../lib/x402-service';
 import Link from 'next/link';
+import Image from 'next/image';
 
 export default function DiscoverPage() {
   const [services, setServices] = useState<X402Service[]>([]);
+  const [displayedServices, setDisplayedServices] = useState<X402Service[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState('name');
   const [error, setError] = useState<string | null>(null);
+  const [itemsPerPage] = useState(12);
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
+    // Preload from cache immediately for faster display
+    const preloadFromCache = () => {
+      if (typeof window !== 'undefined') {
+        try {
+          const cached = localStorage.getItem('x402_services_cache_{}');
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (parsed.data && Array.isArray(parsed.data)) {
+              setServices(parsed.data);
+              setLoading(false);
+            }
+          }
+        } catch (error) {
+          console.error('Error loading cached data:', error);
+        }
+      }
+    };
+
+    preloadFromCache();
     refreshData();
   }, []);
 
   const refreshData = async () => {
     try {
       setLoading(true);
+      setError(null);
       const liveServices = await x402Service.fetchLiveServices();
-      
-      if (liveServices.length > 0) {
-        setServices(liveServices);
-      } else {
-        // Fallback to mock data if no live services found
-        setServices(getMockServices());
-      }
+      setServices(liveServices);
     } catch (err) {
       console.error('Error fetching live services:', err);
-      setError('Failed to fetch live services');
-      // Fallback to mock data
-      setServices(getMockServices());
+      setError('Failed to load services. Using cached data if available.');
     } finally {
       setLoading(false);
     }
-  };
-
-  const getMockServices = (): X402Service[] => {
-    return [
-      {
-        resource: 'https://api.weather.com/v1/current',
-        type: 'http',
-        x402Version: 1,
-        lastUpdated: new Date().toISOString(),
-        metadata: {
-          name: 'Weather Data API',
-          description: 'Real-time weather information and forecasts for global locations with historical data access.',
-          tags: ['weather', 'data', 'forecast']
-        },
-        accepts: [{
-          asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-          description: 'USDC payment for weather data',
-          extra: { name: 'USD Coin', version: '2' },
-          maxAmountRequired: '50000',
-          maxTimeoutSeconds: 60,
-          mimeType: 'application/json',
-          network: 'base',
-          outputSchema: {
-            input: { method: 'GET', type: 'http' },
-            output: null
-          },
-          payTo: '0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6',
-          resource: 'https://api.weather.com/v1/current',
-          scheme: 'exact'
-        }]
-      },
-      {
-        resource: 'https://api.finance.com/v2/stocks/price',
-        type: 'http',
-        x402Version: 1,
-        lastUpdated: new Date().toISOString(),
-        metadata: {
-          name: 'Financial Market Data',
-          description: 'Real-time stock prices, cryptocurrency data, and market analytics with millisecond precision.',
-          tags: ['finance', 'stocks', 'crypto']
-        },
-        accepts: [{
-          asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-          description: 'USDC payment for financial data',
-          extra: { name: 'USD Coin', version: '2' },
-          maxAmountRequired: '100000',
-          maxTimeoutSeconds: 60,
-          mimeType: 'application/json',
-          network: 'base',
-          outputSchema: {
-            input: { method: 'GET', type: 'http' },
-            output: null
-          },
-          payTo: '0x8ba1f109551bA432b026B4473A19798490eF6E44',
-          resource: 'https://api.finance.com/v2/stocks/price',
-          scheme: 'exact'
-        }]
-      }
-    ];
   };
 
   const availableTags = Array.from(new Set(services.flatMap(service => 
@@ -131,13 +89,27 @@ export default function DiscoverPage() {
     }
   });
 
+  // Paginate the sorted services
+  const paginatedServices = sortedServices.slice(0, currentPage * itemsPerPage);
+  const hasMore = sortedServices.length > paginatedServices.length;
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    // Simulate async loading for smooth UX
+    await new Promise(resolve => setTimeout(resolve, 300));
+    setCurrentPage(prev => prev + 1);
+    setLoadingMore(false);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col bg-white">
         <Header />
         <main className="flex-grow py-12 px-4">
           <div className="container mx-auto text-center">
-            <div className="h-16 w-16 bg-gray-200 mx-auto mb-4 animate-pulse"></div>
+            <div className="h-16 w-16 bg-gray-200 mx-auto mb-4 animate-pulse">
+              <Image src="/1x402.ico" alt="x402 Logo" width={64} height={64} />
+            </div>
             <h2 className="text-xl font-bold font-mono mb-2">LOADING X402 SERVICES</h2>
             <p className="text-gray-600 font-mono">Fetching live data from x402 Bazaar...</p>
           </div>
@@ -252,25 +224,25 @@ export default function DiscoverPage() {
             </p>
           </div>
 
-          {/* API Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {sortedServices.map(service => {
-              const tags = x402Service.getServiceTags(service);
-              const primaryPayment = service.accepts[0];
-              const price = x402Service.formatUSDCAmount(primaryPayment?.maxAmountRequired || '0');
-              const rating = x402Service.getServiceRating(service);
-              
-              return (
-                <div key={service.resource} className="retro-card hover:transform hover:-translate-y-1 transition-transform duration-200">
-                  <div className="flex justify-between items-start mb-4">
-                    <h3 className="text-xl font-bold font-mono tracking-wide">
+              {/* API Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 overflow-hidden">
+                {paginatedServices.map(service => {
+                  const tags = x402Service.getServiceTags(service);
+                  const primaryPayment = service.accepts[0];
+                  const price = x402Service.formatUSDCAmount(primaryPayment?.maxAmountRequired || '0');
+                  const rating = x402Service.getServiceRating(service);
+
+                  return (
+                    <div key={service.resource} className="retro-card hover:transform hover:-translate-y-1 transition-transform duration-200 break-words">
+                  <div className="mb-4">
+                    <h3 className="text-xl sm:text-2xl font-bold font-mono tracking-wide mb-2 overflow-hidden text-ellipsis break-words" style={{ fontSize: 'clamp(1rem, 2vw + 0.5rem, 1.5rem)' }}>
                       {service.metadata.name || service.resource.split('/').pop() || 'X402 Service'}
                     </h3>
-                    <div className="text-right">
-                      <div className="text-2xl font-bold font-mono">
+                    <div className="flex items-baseline gap-2">
+                      <div className="text-2xl sm:text-3xl font-bold font-mono" style={{ fontSize: 'clamp(1.25rem, 2.5vw + 0.5rem, 1.875rem)' }}>
                         {price} USDC
                       </div>
-                      <div className="text-sm text-gray-600 font-mono">
+                      <div className="text-sm text-gray-600 font-mono whitespace-nowrap">
                         per request
                       </div>
                     </div>
@@ -315,20 +287,20 @@ export default function DiscoverPage() {
                     </div>
                   </div>
                   
-                  <div className="flex gap-2">
-                    <Link 
-                      href={`/discover/${encodeURIComponent(service.resource)}`}
-                      className="retro-button flex-1 text-center"
-                    >
-                      VIEW DETAILS
-                    </Link>
-                    <Link 
-                      href={`/discover/${encodeURIComponent(service.resource)}/test`}
-                      className="retro-button flex-1 bg-gray-100 text-center"
-                    >
-                      TEST API
-                    </Link>
-                  </div>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Link
+                          href={`/discover/${encodeURIComponent(service.resource)}`}
+                          className="retro-button flex-1 text-center text-xs sm:text-sm"
+                        >
+                          VIEW DETAILS
+                        </Link>
+                        <Link
+                          href={`/discover/${encodeURIComponent(service.resource)}/test`}
+                          className="retro-button flex-1 bg-gray-100 text-gray-900 text-center text-xs sm:text-sm"
+                        >
+                          TEST API
+                        </Link>
+                      </div>
                 </div>
               );
             })}
@@ -344,6 +316,19 @@ export default function DiscoverPage() {
               <p className="text-gray-600 font-mono">
                 Try adjusting your search terms or filters.
               </p>
+            </div>
+          )}
+
+          {/* Load More Button */}
+          {hasMore && (
+            <div className="text-center mt-8">
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="retro-button bg-gray-100 disabled:opacity-50"
+              >
+                {loadingMore ? 'LOADING...' : `LOAD MORE (${sortedServices.length - paginatedServices.length} remaining)`}
+              </button>
             </div>
           )}
 

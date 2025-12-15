@@ -1,4 +1,4 @@
-// Reown AppKit Configuration
+/* eslint-disable @typescript-eslint/no-unused-vars */
 'use client';
 
 import { createAppKit } from '@reown/appkit/react';
@@ -18,12 +18,11 @@ import {
 } from '@reown/appkit/networks';
 import type { AppKitNetwork } from '@reown/appkit/networks';
 import { QueryClient } from '@tanstack/react-query';
+import { cookieStorage, createStorage, http } from '@wagmi/core'
 
-// 1. Get projectId from https://cloud.reown.com
-// Use a default for development if not set
-export const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID || 
-                         process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ||
-                         '3fbb6bba6f1de962d911bb5b5c9dba88'; // Default for development
+
+
+export const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID || process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || '3fbb6bba6f1de962d911bb5b5c9dba88';
 
 // 2. Set up metadata
 const metadata = {
@@ -53,6 +52,8 @@ export type Networks = typeof networks;
 export const wagmiAdapter = new WagmiAdapter({
   projectId: projectId!,
   networks,
+  storage: createStorage({ storage: cookieStorage }),
+  ssr: true,
 });
 
 // 5. Create Query Client

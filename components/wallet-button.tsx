@@ -26,7 +26,6 @@ export function WalletButton() {
 
 // Alternative: Use AppKit's built-in button component
 export function ReownWalletButton() {
-  // @ts-expect-error - AppKitButton is a custom element
   return <appkit-button />;
 }
 

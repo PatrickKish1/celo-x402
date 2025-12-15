@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { useState } from 'react';
-import { WalletButton, NetworkSwitcher } from '../wallet-button';
+import { WalletButton, NetworkSwitcher } from '@/components/wallet-button';
 
 export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);

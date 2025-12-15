@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 'use client';
 
-import { Header } from '../../components/ui/header';
+import { Header } from '@/components/ui/header';
 import { useState, useEffect } from 'react';
-import { X402Service, x402Service } from '../../lib/x402-service';
+import { X402Service, x402Service } from '@/lib/x402-service';
 import Link from 'next/link';
 import Image from 'next/image';
 

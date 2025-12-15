@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any */
-// Squid Router Integration for Cross-Chain Token Swaps
-// Documentation: https://docs.squidrouter.com
+
 
 const SQUID_API_BASE_URL = 'https://v2.api.squidrouter.com/v2';
 const SQUID_INTEGRATOR_ID = process.env.NEXT_PUBLIC_SQUID_INTEGRATOR_ID || 'x402-manager';
@@ -148,7 +147,7 @@ export class SquidRouterService {
 
       const data = await response.json();
       this.chainsCache = data.chains || [];
-      return this.chainsCache;
+      return this.chainsCache || [];
     } catch (error) {
       console.error('Error fetching Squid chains:', error);
       throw error;

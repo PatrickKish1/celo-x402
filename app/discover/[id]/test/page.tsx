@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import { Header } from '../../../../components/ui/header';
-import { Footer } from '../../../../components/ui/footer';
+import { Header } from '@/components/ui/header';
+import { Footer } from '@/components/ui/footer';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { X402Service, x402Service } from '../../../../lib/x402-service';
+import { X402Service, x402Service } from '@/lib/x402-service';
 import Link from 'next/link';
 
 interface TestRequest {
@@ -57,17 +57,18 @@ export default function ApiTestPage() {
           const defaultHeaders: Record<string, string> = {};
           const defaultBody: Record<string, any> = {};
           const defaultParams: Record<string, string> = {};
+          const schemaInput = schema as any;
           
-          if (schema && typeof schema === 'object' && 'headerFields' in schema) {
-            Object.entries((schema as any).headerFields).forEach(([key, field]: [string, any]) => {
+          if (schemaInput && typeof schemaInput === 'object' && 'headerFields' in schemaInput) {
+            Object.entries(schemaInput.headerFields || {}).forEach(([key, field]: [string, any]) => {
               if (!field.required) {
                 defaultHeaders[key] = field.description || '';
               }
             });
           }
           
-          if (schema && typeof schema === 'object' && 'bodyFields' in schema) {
-            Object.entries((schema as any).bodyFields).forEach(([key, field]: [string, any]) => {
+          if (schemaInput && typeof schemaInput === 'object' && 'bodyFields' in schemaInput) {
+            Object.entries(schemaInput.bodyFields || {}).forEach(([key, field]: [string, any]) => {
               if (field.default !== undefined) {
                 defaultBody[key] = field.default;
               }
@@ -84,7 +85,7 @@ export default function ApiTestPage() {
           }));
           
           // Auto-show headers/params if schema defines them
-          if (schema.headerFields && Object.keys(schema.headerFields).length > 0) {
+          if (schemaInput.headerFields && Object.keys(schemaInput.headerFields).length > 0) {
             setShowHeaders(true);
           }
         }
@@ -430,13 +431,13 @@ export default function ApiTestPage() {
                 </div>
 
                 {/* Schema-based Body Fields */}
-                {testRequest.method !== 'GET' && service && service.accepts[0].outputSchema.input.bodyFields && (
+                {testRequest.method !== 'GET' && service && (service.accepts[0].outputSchema.input as any).bodyFields && (
                   <div className="mb-4">
                     <label className="block font-mono font-bold text-sm mb-2">
                       REQUEST BODY FIELDS
                     </label>
                     <div className="space-y-3 p-3 border-2 border-gray-300 bg-gray-50">
-                      {Object.entries(service.accepts[0].outputSchema.input.bodyFields).map(([fieldName, fieldSchema]: [string, any]) => (
+                      {Object.entries((service.accepts[0].outputSchema.input as any).bodyFields).map(([fieldName, fieldSchema]: [string, any]) => (
                         <div key={fieldName}>
                           <label className="block text-xs font-mono mb-1">
                             {fieldName.toUpperCase()}

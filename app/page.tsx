@@ -1,8 +1,8 @@
 'use client';
 
-import { Header } from '../components/ui/header';
-import { Footer } from '../components/ui/footer';
-import { Hero3D } from '../components/ui/hero-3d';
+import { Header } from '@/components/ui/header';
+import { Footer } from '@/components/ui/footer';
+import { Hero3D } from '@/components/ui/hero-3d';
 import Link from 'next/link';
 
 export default function HomePage() {

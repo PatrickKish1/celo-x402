@@ -26,6 +26,10 @@ export interface X402PaymentRequirement {
     input: {
       method: string;
       type: string;
+      bodyType?: string;
+      headerFields?: Record<string, { type: string; required?: boolean; description?: string; default?: any }>;
+      queryFields?: Record<string, { type: string; required?: boolean; description?: string; default?: any }>;
+      bodyFields?: Record<string, { type: string; required?: boolean; description?: string; default?: any }>;
     };
     output: any;
   };

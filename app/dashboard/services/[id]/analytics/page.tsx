@@ -1,6 +1,6 @@
 'use client';
 
-import { Header } from '../../../../../components/ui/header';
+import { Header } from '@/components/ui/header';
 import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';

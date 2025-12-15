@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { rateLimiters } from '../../../lib/rate-limiter';
+import { rateLimiters } from '@/lib/rate-limiter';
 
 const CDP_BAZAAR_URL = 'https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources';
 

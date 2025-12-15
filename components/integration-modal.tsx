@@ -2,7 +2,7 @@
 'use client';
 
 import { useState } from 'react';
-import { X402Service } from '../lib/x402-service';
+import { X402Service } from '@/lib/x402-service';
 
 interface IntegrationModalProps {
   isOpen: boolean;
@@ -23,7 +23,7 @@ export function IntegrationModal({
   if (!isOpen) return null;
 
   const primaryPayment = service.accepts[0];
-  const schema = primaryPayment.outputSchema.input;
+  const schema = primaryPayment.outputSchema.input as any;
 
   const generateCodeSnippet = (language: CodeLanguage): string => {
     const exampleBody = schema.bodyFields 

@@ -1,12 +1,12 @@
 'use client';
 
-import { Header } from '../../../components/ui/header';
-import { Footer } from '../../../components/ui/footer';
+import { Header } from '@/components/ui/header';
+import { Footer } from '@/components/ui/footer';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { X402Service, x402Service } from '../../../lib/x402-service';
-import { DocumentationModal } from '../../../components/documentation-modal';
-import { IntegrationModal } from '../../../components/integration-modal';
+import { X402Service, x402Service } from '@/lib/x402-service';
+import { DocumentationModal } from '@/components/documentation-modal';
+import { IntegrationModal } from '@/components/integration-modal';
 import Link from 'next/link';
 
 export default function ServiceDetailsPage() {

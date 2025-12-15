@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { NextRequest, NextResponse } from 'next/server';
-import { x402PaymentProcessor } from '../../../../lib/x402-payment-processor';
+import { x402PaymentProcessor } from '@/lib/x402-payment-processor';
 
 export async function GET(
   request: NextRequest,

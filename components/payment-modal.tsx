@@ -2,8 +2,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X402PaymentRequirement } from '../lib/x402-service';
-import { squidRouter, SquidToken, SquidChain } from '../lib/squid-router';
+import { X402PaymentRequirement } from '@/lib/x402-service';
+import { squidRouter, SquidToken, SquidChain } from '@/lib/squid-router';
 import { useAccount } from 'wagmi';
 
 interface PaymentModalProps {

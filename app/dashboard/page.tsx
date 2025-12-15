@@ -1,9 +1,9 @@
 'use client';
 
-import { Header } from '../../components/ui/header';
+import { Header } from '@/components/ui/header';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { x402Dashboard, type DashboardStats, type ServiceData, type ActivityItem } from '../../lib/x402-dashboard';
+import { x402Dashboard, type DashboardStats, type ServiceData, type ActivityItem } from '@/lib/x402-dashboard';
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState('overview');

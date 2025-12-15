@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any */
 'use client';
 
-import { Header } from '../../../components/ui/header';
+import { Header } from '@/components/ui/header';
 import { useState } from 'react';
 import Link from 'next/link';
 

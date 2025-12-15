@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import { X402Service } from '../lib/x402-service';
+import { X402Service } from '@/lib/x402-service';
 
 interface DocumentationModalProps {
   isOpen: boolean;
@@ -17,7 +17,7 @@ export function DocumentationModal({
   if (!isOpen) return null;
 
   const primaryPayment = service.accepts[0];
-  const schema = primaryPayment.outputSchema.input;
+  const schema = primaryPayment.outputSchema.input as any;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">

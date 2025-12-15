@@ -6,6 +6,22 @@ import { createWalletClient, custom, type WalletClient } from 'viem';
 import { base, baseSepolia, polygon, optimism, arbitrum } from 'viem/chains';
 import type { PaymentPayload, PaymentRequirements } from './x402-payment-processor';
 
+// Type definition for Ethereum provider
+interface EthereumProvider {
+  request(args: { method: string; params?: unknown[] }): Promise<unknown>;
+  isMetaMask?: boolean;
+  selectedAddress?: string;
+  chainId?: string;
+  on?(event: string, handler: (...args: any[]) => void): void;
+  removeListener?(event: string, handler: (...args: any[]) => void): void;
+}
+
+// Helper function to get typed ethereum provider
+function getEthereumProvider(): EthereumProvider | undefined {
+  if (typeof window === 'undefined') return undefined;
+  return (window as any).ethereum as EthereumProvider | undefined;
+}
+
 export interface WalletConfig {
   address: string;
   chainId: number;
@@ -43,12 +59,13 @@ export class X402WalletService {
    */
   async connectWallet(): Promise<WalletConfig> {
     try {
-      if (typeof window === 'undefined' || !window.ethereum) {
+      const ethereum = getEthereumProvider();
+      if (!ethereum) {
         throw new Error('No Web3 wallet detected');
       }
 
       // Request account access
-      const accounts = await window.ethereum.request({
+      const accounts = await ethereum.request({
         method: 'eth_requestAccounts',
       }) as string[];
 
@@ -59,7 +76,7 @@ export class X402WalletService {
       this.currentAddress = accounts[0];
 
       // Get chain ID
-      const chainId = await window.ethereum.request({
+      const chainId = await ethereum.request({
         method: 'eth_chainId',
       }) as string;
 
@@ -67,7 +84,7 @@ export class X402WalletService {
       this.walletClient = createWalletClient({
         account: this.currentAddress as `0x${string}`,
         chain: this.getChainByChainId(parseInt(chainId, 16)),
-        transport: custom(window.ethereum),
+        transport: custom(ethereum),
       });
 
       console.log('Wallet connected:', this.currentAddress);
@@ -100,7 +117,8 @@ export class X402WalletService {
     }
 
     try {
-      const chainId = await window.ethereum?.request({
+      const ethereum = getEthereumProvider();
+      const chainId = await ethereum?.request({
         method: 'eth_chainId',
       }) as string;
 
@@ -119,7 +137,8 @@ export class X402WalletService {
    */
   async switchNetwork(network: string): Promise<boolean> {
     try {
-      if (!window.ethereum) {
+      const ethereum = getEthereumProvider();
+      if (!ethereum) {
         throw new Error('No Web3 wallet detected');
       }
 
@@ -130,7 +149,7 @@ export class X402WalletService {
 
       // Try to switch network
       try {
-        await window.ethereum.request({
+        await ethereum.request({
           method: 'wallet_switchEthereumChain',
           params: [{ chainId: `0x${chain.id.toString(16)}` }],
         });
@@ -158,7 +177,8 @@ export class X402WalletService {
       throw new Error(`Unsupported network: ${network}`);
     }
 
-    await window.ethereum?.request({
+    const ethereum = getEthereumProvider();
+    await ethereum?.request({
       method: 'wallet_addEthereumChain',
       params: [{
         chainId: `0x${chain.id.toString(16)}`,
@@ -219,7 +239,14 @@ export class X402WalletService {
       };
 
       // Sign the typed data
-      const signature = await this.walletClient.signTypedData(typedData);
+      if (!this.currentAddress) {
+        throw new Error('No wallet address available');
+      }
+
+      const signature = await this.walletClient.signTypedData({
+        account: this.currentAddress as `0x${string}`,
+        ...typedData,
+      });
 
       // Build payment payload
       const payload: PaymentPayload = {
@@ -367,15 +394,4 @@ export class X402WalletService {
 }
 
 export const x402Wallet = X402WalletService.getInstance();
-
-// Type augmentation for window.ethereum
-declare global {
-  interface Window {
-    ethereum?: {
-      request: (args: { method: string; params?: any[] }) => Promise<any>;
-      on: (event: string, handler: (...args: any[]) => void) => void;
-      removeListener: (event: string, handler: (...args: any[]) => void) => void;
-    };
-  }
-}
 

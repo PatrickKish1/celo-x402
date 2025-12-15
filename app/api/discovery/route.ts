@@ -1,30 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { rateLimiters } from '@/lib/rate-limiter';
 
-const CDP_BAZAAR_URL = 'https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources';
+// Proxy to backend API for discovery (backend handles rate limiting and caching)
+const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:3001';
 
 export async function GET(request: NextRequest) {
   try {
-    // Wait for rate limit token before making request
-    await rateLimiters.cdp.waitForToken();
-    
     // Get query parameters from the request
     const { searchParams } = new URL(request.url);
     
-    // Build CDP API URL with query params
-    const cdpUrl = new URL(CDP_BAZAAR_URL);
+    // Build backend API URL with query params
+    const backendUrl = new URL(`${BACKEND_API_URL}/api/discovery`);
     searchParams.forEach((value, key) => {
-      cdpUrl.searchParams.append(key, value);
+      backendUrl.searchParams.append(key, value);
     });
 
-    console.log(`Proxying CDP Bazaar request: ${cdpUrl.toString()} (${rateLimiters.cdp.getTokenCount().toFixed(2)} tokens available)`);
+    console.log(`Proxying discovery request to backend: ${backendUrl.toString()}`);
 
-    // Make request to CDP API from server-side (no CORS issues)
-    const response = await fetch(cdpUrl.toString(), {
+    // Make request to backend API (backend handles rate limiting and caching)
+    const response = await fetch(backendUrl.toString(), {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'User-Agent': 'X402-Manager/1.0',
       },
     });
 

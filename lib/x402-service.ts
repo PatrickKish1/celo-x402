@@ -71,13 +71,64 @@ export class X402ServiceManager {
   }
 
   async getServiceDetails(serviceId: string): Promise<X402Service | null> {
+    // Check memory cache first
     const cached = this.cache.get(serviceId);
     if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
+      console.log('Using memory cached service details');
       return cached.data;
     }
 
+    // Check localStorage cache for all services
+    if (typeof window !== 'undefined') {
+      try {
+        // Try to find service in cached services from localStorage
+        const cacheKeys = ['x402_services_cache_all_{}', 'x402_services_cache_{}'];
+        for (const key of cacheKeys) {
+          const stored = localStorage.getItem(key);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (parsed.data && Array.isArray(parsed.data)) {
+              const service = parsed.data.find((s: X402Service) => s.resource === serviceId);
+              if (service) {
+                console.log('Found service in localStorage cache');
+                this.cache.set(serviceId, { data: service, timestamp: Date.now() });
+                return service;
+              }
+            }
+          }
+        }
+        
+        // Also check all localStorage keys that match the pattern
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('x402_services_cache_')) {
+            const stored = localStorage.getItem(key);
+            if (stored) {
+              try {
+                const parsed = JSON.parse(stored);
+                if (parsed.data && Array.isArray(parsed.data)) {
+                  const service = parsed.data.find((s: X402Service) => s.resource === serviceId);
+                  if (service) {
+                    console.log(`Found service in localStorage cache (${key})`);
+                    this.cache.set(serviceId, { data: service, timestamp: Date.now() });
+                    return service;
+                  }
+                }
+              } catch (e) {
+                // Skip invalid entries
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error reading from localStorage:', error);
+      }
+    }
+
+    // Only fetch all services if not found in cache
     try {
-      const services = await this.fetchLiveServices();
+      console.log('Service not in cache, fetching from discovery service...');
+      const services = await x402Discovery.fetchAllServices();
       const service = services.find(s => s.resource === serviceId);
       
       if (service) {

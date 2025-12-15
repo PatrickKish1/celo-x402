@@ -6,6 +6,8 @@ import { Footer } from '@/components/ui/footer';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { X402Service, x402Service } from '@/lib/x402-service';
+import { x402Wallet } from '@/lib/x402-wallet';
+import { useAppKit, useAppKitAccount } from '@reown/appkit/react';
 import Link from 'next/link';
 
 interface TestRequest {
@@ -41,6 +43,18 @@ export default function ApiTestPage() {
   const [isTesting, setIsTesting] = useState(false);
   const [showHeaders, setShowHeaders] = useState(false);
   const [showParams, setShowParams] = useState(false);
+  const { isConnected, address } = useAppKitAccount();
+  const { open } = useAppKit();
+
+  useEffect(() => {
+    // Initialize wallet service when wallet is connected
+    if (isConnected && address) {
+      x402Wallet.initializeFromWagmi(isConnected, address).catch(console.error);
+    } else {
+      // Clear wallet state when disconnected
+      x402Wallet.disconnectWallet();
+    }
+  }, [isConnected, address]);
 
   useEffect(() => {
     async function fetchServiceDetails() {
@@ -156,6 +170,19 @@ export default function ApiTestPage() {
   const executeTest = async () => {
     if (!service) return;
 
+    // Check if wallet is connected
+    if (!isConnected || !address) {
+      setTestResponse({
+        status: 0,
+        statusText: 'Error',
+        headers: {},
+        body: '',
+        time: 0,
+        error: 'Wallet not connected. Please connect your wallet to make x402 payments.'
+      });
+      return;
+    }
+
     setIsTesting(true);
     setTestResponse(null);
 
@@ -183,12 +210,16 @@ export default function ApiTestPage() {
         if (!key.trim()) delete headers[key];
       });
 
-      // Make the request
-      const response = await fetch(url, {
+      // Prepare request options
+      const requestOptions: RequestInit = {
         method: testRequest.method,
         headers,
         body: testRequest.method !== 'GET' ? testRequest.body : undefined
-      });
+      };
+
+      // Use x402 wallet service to make payment request
+      // This will handle the 402 payment flow automatically
+      const response = await x402Wallet.makePaymentRequest(url, requestOptions);
 
       const responseTime = Date.now() - startTime;
       
@@ -485,13 +516,27 @@ export default function ApiTestPage() {
                   </div>
                 )}
 
-                {/* Execute Button */}
+                {/* Execute/Connect Button - Single button that handles both states */}
                 <button
-                  onClick={executeTest}
-                  disabled={isTesting || !testRequest.url}
-                  className="retro-button w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => {
+                    if (!isConnected) {
+                      // Open wallet connection modal
+                      open();
+                    } else {
+                      // Execute the request
+                      executeTest();
+                    }
+                  }}
+                  disabled={isTesting || !testRequest.url || (isConnected && isTesting)}
+                  className={`retro-button w-full disabled:opacity-50 disabled:cursor-not-allowed ${
+                    !isConnected ? 'bg-blue-500 text-white hover:bg-blue-600' : ''
+                  }`}
                 >
-                  {isTesting ? 'EXECUTING...' : 'EXECUTE REQUEST'}
+                  {isTesting 
+                    ? 'EXECUTING WITH PAYMENT...' 
+                    : !isConnected 
+                    ? 'CONNECT WALLET' 
+                    : 'EXECUTE REQUEST'}
                 </button>
               </div>
 

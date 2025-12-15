@@ -1,51 +1,125 @@
 'use client';
 
 import { Header } from '@/components/ui/header';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 
-// Mock analytics data - in production this would come from API
-const mockAnalytics = {
-  serviceId: '1',
-  serviceName: 'Weather Data API',
-  timeRange: '30d',
+interface ServiceAnalytics {
+  serviceId: string;
+  serviceName: string;
+  timeRange: string;
   metrics: {
-    totalCalls: 15420,
-    totalRevenue: 771.00,
-    avgResponseTime: 45,
-    uptime: 99.8,
-    errorRate: 0.2,
-    uniqueUsers: 1247
-  },
-  callsByEndpoint: [
-    { endpoint: '/current', calls: 8920, revenue: 446.00, avgTime: 42 },
-    { endpoint: '/forecast', calls: 4680, revenue: 234.00, avgTime: 48 },
-    { endpoint: '/historical', calls: 1820, revenue: 91.00, avgTime: 51 }
-  ],
-  callsOverTime: [
-    { date: '2024-01-15', calls: 512, revenue: 25.60 },
-    { date: '2024-01-16', calls: 498, revenue: 24.90 },
-    { date: '2024-01-17', calls: 523, revenue: 26.15 },
-    { date: '2024-01-18', calls: 489, revenue: 24.45 },
-    { date: '2024-01-19', calls: 534, revenue: 26.70 },
-    { date: '2024-01-20', calls: 521, revenue: 26.05 }
-  ],
-  topUsers: [
-    { address: '0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6', calls: 1247, revenue: 62.35 },
-    { address: '0x8ba1f109551bA432b026B4473A19798490eF6E44', calls: 892, revenue: 44.60 },
-    { address: '0x1234567890abcdef1234567890abcdef12345678', calls: 567, revenue: 28.35 }
-  ]
-};
+    totalCalls: number;
+    totalRevenue: number;
+    avgResponseTime: number;
+    uptime: number;
+    errorRate: number;
+    uniqueUsers: number;
+  };
+  callsByEndpoint: Array<{
+    endpoint: string;
+    calls: number;
+    revenue: number;
+    avgTime: number;
+  }>;
+  callsOverTime: Array<{
+    date: string;
+    calls: number;
+    revenue: number;
+  }>;
+  topUsers: Array<{
+    address: string;
+    calls: number;
+    revenue: number;
+  }>;
+}
 
 export default function ServiceAnalyticsPage() {
   const params = useParams();
   const serviceId = params.id as string;
   const [timeRange, setTimeRange] = useState('30d');
   const [activeTab, setActiveTab] = useState('overview');
+  const [analytics, setAnalytics] = useState<ServiceAnalytics | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // In production, fetch analytics data based on serviceId and timeRange
-  const analytics = mockAnalytics;
+  // Fetch analytics data from backend API
+  useEffect(() => {
+    const fetchAnalytics = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:3001';
+        const response = await fetch(
+          `${backendUrl}/api/analytics/${encodeURIComponent(serviceId)}?timeRange=${timeRange}`
+        );
+        
+        if (!response.ok) {
+          if (response.status === 404) {
+            setError('No analytics data available for this service yet.');
+          } else {
+            throw new Error(`Failed to fetch analytics: ${response.statusText}`);
+          }
+          return;
+        }
+        
+        const data = await response.json();
+        setAnalytics(data);
+      } catch (err) {
+        console.error('Error fetching analytics:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load analytics');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (serviceId) {
+      fetchAnalytics();
+    }
+  }, [serviceId, timeRange]);
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col bg-white">
+        <Header />
+        <main className="flex-grow py-12 px-4">
+          <div className="container mx-auto max-w-7xl">
+            <div className="text-center py-20">
+              <div className="h-16 w-16 bg-gray-200 mx-auto mb-4 animate-pulse rounded"></div>
+              <h2 className="text-xl font-bold font-mono mb-2">LOADING ANALYTICS</h2>
+              <p className="text-gray-600 font-mono">Fetching service analytics data...</p>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error || !analytics) {
+    return (
+      <div className="min-h-screen flex flex-col bg-white">
+        <Header />
+        <main className="flex-grow py-12 px-4">
+          <div className="container mx-auto max-w-7xl">
+            <div className="text-center py-20">
+              <h2 className="text-xl font-bold font-mono mb-2 text-red-600">ERROR LOADING ANALYTICS</h2>
+              <p className="text-gray-600 font-mono mb-4">{error || 'No analytics data available'}</p>
+              <Link
+                href={`/dashboard/services/${serviceId}`}
+                className="retro-button inline-block"
+              >
+                BACK TO SERVICE
+              </Link>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-white">

@@ -4,7 +4,9 @@
 
 import { createWalletClient, custom, type WalletClient } from 'viem';
 import { base, baseSepolia, polygon, optimism, arbitrum } from 'viem/chains';
+import { getAccount, getWalletClient } from '@wagmi/core';
 import type { PaymentPayload, PaymentRequirements } from './x402-payment-processor';
+import { config } from './reown-config';
 
 // Type definition for Ethereum provider
 interface EthereumProvider {
@@ -137,6 +139,10 @@ export class X402WalletService {
    */
   async switchNetwork(network: string): Promise<boolean> {
     try {
+      if (!network) {
+        throw new Error('Network parameter is required');
+      }
+
       const ethereum = getEthereumProvider();
       if (!ethereum) {
         throw new Error('No Web3 wallet detected');
@@ -144,7 +150,7 @@ export class X402WalletService {
 
       const chain = CHAIN_MAP[network];
       if (!chain) {
-        throw new Error(`Unsupported network: ${network}`);
+        throw new Error(`Unsupported network: ${network}. Supported networks: ${Object.keys(CHAIN_MAP).join(', ')}`);
       }
 
       // Try to switch network
@@ -202,18 +208,32 @@ export class X402WalletService {
         throw new Error('Wallet not connected');
       }
 
+      // Validate requirements before using them
+      if (!requirements.extra || !requirements.extra.name) {
+        throw new Error('Payment requirements missing token information (extra.name)');
+      }
+      if (!requirements.asset) {
+        throw new Error('Payment requirements missing asset address');
+      }
+      if (!requirements.network) {
+        throw new Error('Payment requirements missing network');
+      }
+      if (!requirements.payTo) {
+        throw new Error('Payment requirements missing payTo address');
+      }
+
       // Generate nonce
       const nonce = this.generateNonce();
 
       // Create authorization parameters
       const validAfter = Math.floor(Date.now() / 1000).toString();
-      const validBefore = (Math.floor(Date.now() / 1000) + requirements.maxTimeoutSeconds).toString();
+      const validBefore = (Math.floor(Date.now() / 1000) + (requirements.maxTimeoutSeconds || 300)).toString();
 
       // Build EIP-712 typed data for EIP-3009
       const typedData = {
         domain: {
           name: requirements.extra.name,
-          version: requirements.extra.version,
+          version: requirements.extra.version || '2',
           chainId: this.getChainIdFromNetwork(requirements.network),
           verifyingContract: requirements.asset as `0x${string}`,
         },
@@ -277,6 +297,66 @@ export class X402WalletService {
   }
 
   /**
+   * Initialize wallet from Wagmi/Reown
+   */
+  async initializeFromWagmi(isConnected?: boolean, address?: string): Promise<void> {
+    try {
+      // If parameters are provided, use them directly
+      if (isConnected && address) {
+        this.currentAddress = address;
+        
+        // Get wallet client from wagmi
+        if (typeof window !== 'undefined' && config) {
+          try {
+            const walletClient = await getWalletClient(config);
+            if (walletClient) {
+              this.walletClient = walletClient;
+              console.log('Wallet initialized from Wagmi:', this.currentAddress);
+              return;
+            }
+          } catch (error) {
+            console.warn('Could not get wallet client from Wagmi, trying fallback:', error);
+          }
+        }
+      }
+      
+      // Fallback: Try to get account from wagmi config
+      if (typeof window !== 'undefined' && config) {
+        const account = getAccount(config);
+        if (account.address) {
+          this.currentAddress = account.address;
+          
+          // Get wallet client from wagmi
+          const walletClient = await getWalletClient(config);
+          if (walletClient) {
+            this.walletClient = walletClient;
+            console.log('Wallet initialized from Wagmi:', this.currentAddress);
+            return;
+          }
+        }
+      }
+      
+      // Final fallback: try window.ethereum
+      const ethereum = getEthereumProvider();
+      if (ethereum && this.currentAddress) {
+        const chainId = await ethereum.request({
+          method: 'eth_chainId',
+        }) as string;
+        
+        this.walletClient = createWalletClient({
+          account: this.currentAddress as `0x${string}`,
+          chain: this.getChainByChainId(parseInt(chainId, 16)),
+          transport: custom(ethereum),
+        });
+        console.log('Wallet initialized from window.ethereum:', this.currentAddress);
+      }
+    } catch (error) {
+      console.error('Error initializing from Wagmi:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Make a paid request to an x402 endpoint
    */
   async makePaymentRequest(
@@ -284,6 +364,15 @@ export class X402WalletService {
     options?: RequestInit
   ): Promise<Response> {
     try {
+      // Ensure wallet is initialized
+      if (!this.walletClient || !this.currentAddress) {
+        await this.initializeFromWagmi();
+      }
+
+      if (!this.walletClient || !this.currentAddress) {
+        throw new Error('Wallet not connected. Please connect your wallet first.');
+      }
+
       // First request - get payment requirements
       const initialResponse = await fetch(url, {
         ...options,
@@ -298,8 +387,42 @@ export class X402WalletService {
         return initialResponse;
       }
 
-      // Parse payment requirements
-      const requirements: PaymentRequirements = await initialResponse.json();
+      // Parse payment requirements - the 402 response has an 'accepts' array
+      const responseData = await initialResponse.json();
+      
+      // Extract the first payment requirement from the accepts array
+      let requirements: PaymentRequirements;
+      if (responseData.accepts && Array.isArray(responseData.accepts) && responseData.accepts.length > 0) {
+        const firstAccept = responseData.accepts[0];
+        requirements = {
+          x402Version: responseData.x402Version || 1,
+          scheme: firstAccept.scheme || 'exact',
+          network: firstAccept.network,
+          maxAmountRequired: firstAccept.maxAmountRequired,
+          resource: firstAccept.resource || url,
+          description: firstAccept.description,
+          mimeType: firstAccept.mimeType,
+          payTo: firstAccept.payTo,
+          maxTimeoutSeconds: firstAccept.maxTimeoutSeconds || 300,
+          asset: firstAccept.asset,
+          extra: firstAccept.extra || { name: 'USD Coin', version: '2' },
+        };
+      } else {
+        // Fallback: assume the response itself is the requirements
+        requirements = responseData as PaymentRequirements;
+      }
+
+      // Validate requirements
+      if (!requirements.network) {
+        throw new Error('Payment requirements missing network information');
+      }
+      if (!requirements.asset) {
+        throw new Error('Payment requirements missing asset information');
+      }
+      if (!requirements.extra || !requirements.extra.name) {
+        // Provide defaults if extra is missing
+        requirements.extra = requirements.extra || { name: 'USD Coin', version: '2' };
+      }
 
       // Ensure wallet is on correct network
       const walletConfig = await this.getWalletConfig();

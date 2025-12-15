@@ -14,6 +14,8 @@ export class RateLimiter {
   private readonly refillRate: number; // tokens per millisecond
   private readonly requestsPerMinute?: number;
   private minuteWindow: { timestamp: number; count: number }[] = [];
+  private queue: Array<() => void> = []; // Queue for waiting requests
+  private processing: boolean = false; // Mutex to prevent concurrent processing
 
   constructor(config: RateLimiterConfig) {
     this.maxTokens = config.burstSize || config.requestsPerSecond;
@@ -24,42 +26,67 @@ export class RateLimiter {
   }
 
   /**
-   * Wait until a token is available
+   * Wait until a token is available (thread-safe with queue)
    */
   async waitForToken(): Promise<void> {
-    while (true) {
-      if (this.tryAcquire()) {
-        return;
-      }
+    return new Promise((resolve) => {
+      // Add to queue
+      this.queue.push(resolve);
       
-      // Calculate wait time until next token is available
-      const now = Date.now();
-      const timeSinceLastRefill = now - this.lastRefill;
-      const tokensToAdd = timeSinceLastRefill * this.refillRate;
-      
-      if (tokensToAdd < 1) {
-        // Need to wait for at least one token
-        const timeToWait = Math.ceil((1 - tokensToAdd) / this.refillRate);
-        await this.sleep(timeToWait);
-      } else {
-        // Should have tokens now, try again
-        await this.sleep(10);
+      // Process queue if not already processing
+      if (!this.processing) {
+        this.processQueue();
       }
-    }
+    });
   }
 
   /**
-   * Try to acquire a token without waiting
+   * Process the queue of waiting requests
    */
-  private tryAcquire(): boolean {
+  private async processQueue(): Promise<void> {
+    if (this.processing || this.queue.length === 0) {
+      return;
+    }
+
+    this.processing = true;
+
+    while (this.queue.length > 0) {
+      // Refill tokens
+      this.refill();
+      
+      // Try to acquire token
+      if (this.tryAcquire()) {
+        const resolve = this.queue.shift();
+        if (resolve) {
+          resolve();
+        }
+      } else {
+        // No tokens available, wait for refill
+        const timeToWait = Math.ceil((1 - this.tokens) / this.refillRate);
+        await this.sleep(Math.max(timeToWait, 100)); // Minimum 100ms delay
+      }
+    }
+
+    this.processing = false;
+  }
+
+  /**
+   * Refill tokens based on time elapsed
+   */
+  private refill(): void {
     const now = Date.now();
-    
-    // Refill tokens based on time passed
     const timeSinceLastRefill = now - this.lastRefill;
     const tokensToAdd = timeSinceLastRefill * this.refillRate;
     
     this.tokens = Math.min(this.maxTokens, this.tokens + tokensToAdd);
     this.lastRefill = now;
+  }
+
+  /**
+   * Try to acquire a token without waiting (called after refill)
+   */
+  private tryAcquire(): boolean {
+    const now = Date.now();
 
     // Check per-minute limit if configured
     if (this.requestsPerMinute) {
@@ -123,11 +150,11 @@ export class RateLimiter {
 
 // Pre-configured rate limiters for common APIs
 export const rateLimiters = {
-  // CDP API: 2 req/sec to stay under 2.77 req/sec limit
+  // CDP API: 1 req/sec to stay well under 2.77 req/sec limit (more conservative)
   cdp: new RateLimiter({
-    requestsPerSecond: 2,
-    requestsPerMinute: 120, // 10,000 per hour = ~167/min, use 120 to be safe
-    burstSize: 3,
+    requestsPerSecond: 1, // Reduced from 2 to 1 for safety
+    requestsPerMinute: 60, // Reduced from 120 to 60 for safety
+    burstSize: 2, // Reduced from 3 to 2
   }),
 
   // Etherscan Free API: 2 req/sec to stay under 3 req/sec limit

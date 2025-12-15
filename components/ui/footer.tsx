@@ -79,7 +79,7 @@ export function Footer() {
         <div className="border-t-2 border-black mt-8 pt-8">
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="text-sm font-mono text-gray-600 mb-4 md:mb-0">
-              © 2024 X402 Manager. All rights reserved.
+              © {new Date().getFullYear()} X402 Manager. All rights reserved.
             </div>
             <div className="flex space-x-6">
               <a href="/privacy" className="font-mono text-sm text-gray-600 hover:text-black transition-colors">

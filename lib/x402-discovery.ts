@@ -76,9 +76,7 @@ export class X402DiscoveryService {
     }
   }
 
-  /**
-   * Fetch ALL services from CDP x402 Bazaar with pagination and localStorage caching
-   */
+
   async fetchAllServices(filters?: Omit<DiscoveryFilters, 'limit' | 'offset'>): Promise<X402Service[]> {
     const cacheKey = `all_${JSON.stringify(filters || {})}`;
     
@@ -106,9 +104,6 @@ export class X402DiscoveryService {
       console.log('Fetching ALL x402 services from CDP Bazaar with pagination...');
 
       while (hasMore) {
-        // Wait for rate limit token before making request
-        await rateLimiters.cdp.waitForToken();
-        
         const params = new URLSearchParams();
         if (filters?.type) params.append('type', filters.type);
         params.append('limit', limit.toString());
@@ -116,7 +111,7 @@ export class X402DiscoveryService {
 
         const url = `${X402_BAZAAR_URL}${params.toString() ? '?' + params.toString() : ''}`;
         
-        console.log(`Fetching page ${Math.floor(offset / limit) + 1} with rate limiting (${rateLimiters.cdp.getTokenCount().toFixed(2)} tokens available)`);
+        console.log(`Fetching page ${Math.floor(offset / limit) + 1} from backend API`);
         
         const response = await fetch(url, {
           method: 'GET',
@@ -152,7 +147,7 @@ export class X402DiscoveryService {
           break;
         }
         
-        // Add small delay between pages for safety (belt and suspenders)
+        // Add small delay between pages for safety
         if (hasMore) {
           await new Promise(resolve => setTimeout(resolve, 100));
         }
@@ -231,10 +226,7 @@ export class X402DiscoveryService {
 
       const url = `${X402_BAZAAR_URL}${params.toString() ? '?' + params.toString() : ''}`;
       
-      console.log('Fetching live x402 services from CDP Bazaar:', url);
-
-      // Wait for rate limit token before making request
-      await rateLimiters.cdp.waitForToken();
+      console.log('Fetching live x402 services from backend API:', url);
 
       const response = await fetch(url, {
         method: 'GET',
@@ -290,10 +282,62 @@ export class X402DiscoveryService {
 
   /**
    * Get a specific service by resource URL
+   * Checks cache first before fetching
    */
   async getServiceByResource(resourceUrl: string): Promise<X402Service | null> {
+    // Check memory cache first
+    const cacheKey = `all_${JSON.stringify({})}`;
+    const memCached = this.cache.get(cacheKey);
+    if (memCached && Date.now() - memCached.timestamp < this.CACHE_DURATION) {
+      const service = memCached.data.find(s => s.resource === resourceUrl);
+      if (service) {
+        console.log('Found service in memory cache');
+        return service;
+      }
+    }
+
+    // Check localStorage cache
+    const localCached = this.getLocalStorageCache(cacheKey);
+    if (localCached && localCached.length > 0) {
+      const service = localCached.find(s => s.resource === resourceUrl);
+      if (service) {
+        console.log('Found service in localStorage cache');
+        return service;
+      }
+    }
+
+    // Check all localStorage keys
+    if (typeof window !== 'undefined') {
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('x402_services_cache_')) {
+            const stored = localStorage.getItem(key);
+            if (stored) {
+              try {
+                const parsed = JSON.parse(stored);
+                if (parsed.data && Array.isArray(parsed.data)) {
+                  const service = parsed.data.find((s: X402Service) => s.resource === resourceUrl);
+                  if (service) {
+                    console.log(`Found service in localStorage (${key})`);
+                    return service;
+                  }
+                }
+              } catch (e) {
+                // Skip invalid entries
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error reading from localStorage:', error);
+      }
+    }
+
+    // Only fetch if not found in cache
     try {
-      const services = await this.fetchLiveServices();
+      console.log('Service not in cache, fetching all services...');
+      const services = await this.fetchAllServices();
       return services.find(s => s.resource === resourceUrl) || null;
     } catch (error) {
       console.error('Error fetching service details:', error);

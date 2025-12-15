@@ -2,6 +2,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { x402PaymentProcessor } from '@/lib/x402-payment-processor';
 
+// Backend API URL for analytics tracking
+const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:3001';
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
@@ -80,6 +83,9 @@ export async function GET(
       }
     };
     
+    // Track request start time for response time calculation
+    const requestStartTime = Date.now();
+    
     // Process payment with real CDP facilitator
     const paymentResult = await x402PaymentProcessor.processPayment(
       paymentPayload,
@@ -95,6 +101,38 @@ export async function GET(
         { status: 402 }
       );
     }
+    
+    // Calculate response time
+    const responseTime = Date.now() - requestStartTime;
+    
+    // Extract service information from the path
+    const serviceId = path; // Use path as service ID, or extract from payment requirements
+    const serviceName = paymentRequirements.description || 'x402 API Service';
+    const endpoint = path;
+    const payerAddress = paymentPayload.payload?.authorization?.from || paymentResult.payer || 'unknown';
+    const amount = parseInt(paymentRequirements.maxAmountRequired);
+    const amountFormatted = amount / 1000000; // Convert micro-USDC to USDC
+    
+    // Track analytics via backend API (non-blocking)
+    fetch(`${BACKEND_API_URL}/api/analytics/track`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        serviceId,
+        serviceName,
+        endpoint,
+        method: 'GET',
+        payerAddress,
+        amount,
+        amountFormatted,
+        network: paymentRequirements.network,
+        transactionHash: paymentResult.transactionHash,
+        responseTime,
+        statusCode: 200,
+      }),
+    }).catch((error) => {
+      console.error('Error recording analytics (non-blocking):', error);
+    });
     
     // Payment verified successfully, return the resource
     return NextResponse.json({
@@ -209,6 +247,9 @@ export async function POST(
       }
     };
     
+    // Track request start time for response time calculation
+    const requestStartTime = Date.now();
+    
     // Process payment
     const paymentResult = await x402PaymentProcessor.processPayment(
       paymentPayload,
@@ -225,8 +266,40 @@ export async function POST(
       );
     }
     
+    // Calculate response time
+    const responseTime = Date.now() - requestStartTime;
+    
     // Get request body
     const body = await request.json();
+    
+    // Extract service information
+    const serviceId = path;
+    const serviceName = paymentRequirements.description || 'x402 API Service';
+    const endpoint = path;
+    const payerAddress = paymentPayload.payload?.authorization?.from || paymentResult.payer || 'unknown';
+    const amount = parseInt(paymentRequirements.maxAmountRequired);
+    const amountFormatted = amount / 1000000;
+    
+    // Track analytics via backend API (non-blocking)
+    fetch(`${BACKEND_API_URL}/api/analytics/track`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        serviceId,
+        serviceName,
+        endpoint,
+        method: 'POST',
+        payerAddress,
+        amount,
+        amountFormatted,
+        network: paymentRequirements.network,
+        transactionHash: paymentResult.transactionHash,
+        responseTime,
+        statusCode: 200,
+      }),
+    }).catch((error) => {
+      console.error('Error recording analytics (non-blocking):', error);
+    });
     
     // Payment verified, process the request
     return NextResponse.json({

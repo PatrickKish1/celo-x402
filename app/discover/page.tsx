@@ -24,12 +24,39 @@ export default function DiscoverPage() {
     const preloadFromCache = () => {
       if (typeof window !== 'undefined') {
         try {
-          const cached = localStorage.getItem('x402_services_cache_{}');
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            if (parsed.data && Array.isArray(parsed.data)) {
-              setServices(parsed.data);
-              setLoading(false);
+          // Check all possible cache keys
+          const cacheKeys = ['x402_services_cache_all_{}', 'x402_services_cache_{}'];
+          for (const key of cacheKeys) {
+            const cached = localStorage.getItem(key);
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              if (parsed.data && Array.isArray(parsed.data) && parsed.data.length > 0) {
+                console.log(`Loaded ${parsed.data.length} services from cache (${key})`);
+                setServices(parsed.data);
+                setLoading(false);
+                return; // Found cache, stop looking
+              }
+            }
+          }
+          
+          // Also check all localStorage keys that match the pattern
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('x402_services_cache_')) {
+              const cached = localStorage.getItem(key);
+              if (cached) {
+                try {
+                  const parsed = JSON.parse(cached);
+                  if (parsed.data && Array.isArray(parsed.data) && parsed.data.length > 0) {
+                    console.log(`Loaded ${parsed.data.length} services from cache (${key})`);
+                    setServices(parsed.data);
+                    setLoading(false);
+                    return; // Found cache, stop looking
+                  }
+                } catch (e) {
+                  // Skip invalid entries
+                }
+              }
             }
           }
         } catch (error) {

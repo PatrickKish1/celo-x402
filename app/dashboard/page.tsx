@@ -1,15 +1,18 @@
 'use client';
 
 import { Header } from '@/components/ui/header';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { useAppKitAccount } from '@reown/appkit/react';
 import { x402Dashboard, type DashboardStats, type ServiceData, type ActivityItem } from '@/lib/x402-dashboard';
 
 export default function DashboardPage() {
+  const { address, isConnected } = useAppKitAccount();
   const [activeTab, setActiveTab] = useState('overview');
   const [stats, setStats] = useState<DashboardStats>({
     totalServices: 0,
     activeServices: 0,
+    userServices: 0,
     totalCalls: 0,
     totalRevenue: 0,
     monthlyCalls: 0,
@@ -19,16 +22,13 @@ export default function DashboardPage() {
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
-
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
     try {
       setLoading(true);
+      const userAddress = isConnected && address ? address : undefined;
       const [statsData, servicesData, activityData] = await Promise.all([
-        x402Dashboard.getDashboardStats(),
-        x402Dashboard.getServices(),
+        x402Dashboard.getDashboardStats(userAddress),
+        x402Dashboard.getServices(userAddress),
         x402Dashboard.getActivity(),
       ]);
       
@@ -40,7 +40,13 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [address, isConnected]);
+
+  
+  useEffect(() => {
+    loadDashboardData();
+  }, [address, isConnected, loadDashboardData]);
+
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -58,16 +64,24 @@ export default function DashboardPage() {
                 Manage your x402 APIs and monitor performance
               </p>
             </div>
-            <Link
-              href="/dashboard/create"
-              className="retro-button mt-4 md:mt-0"
-            >
-              CREATE NEW API
-            </Link>
+            <div className="flex gap-2 mt-4 md:mt-0">
+              <Link
+                href="/dashboard/create"
+                className="retro-button"
+              >
+                CREATE NEW API
+              </Link>
+              {/* <Link
+                href="/dashboard/generate"
+                className="retro-button bg-blue-100 text-blue-800 hover:bg-blue-200"
+              >
+                GENERATE MIDDLEWARE
+              </Link> */}
+            </div>
           </div>
 
           {/* Stats Overview */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
             <div className="retro-card text-center">
               <div className="text-3xl font-bold font-mono mb-2">
                 {loading ? '...' : stats.totalServices}
@@ -76,6 +90,17 @@ export default function DashboardPage() {
                 TOTAL SERVICES
               </div>
             </div>
+            
+            {isConnected && address && (
+              <div className="retro-card text-center bg-blue-50 border-blue-300">
+                <div className="text-3xl font-bold font-mono mb-2 text-blue-600">
+                  {loading ? '...' : stats.userServices}
+                </div>
+                <div className="text-sm font-mono text-gray-600 uppercase tracking-wide">
+                  YOUR SERVICES
+                </div>
+              </div>
+            )}
             
             <div className="retro-card text-center">
               <div className="text-3xl font-bold font-mono mb-2">

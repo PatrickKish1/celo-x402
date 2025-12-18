@@ -101,7 +101,7 @@ export class X402PaymentProcessor {
     paymentRequirements: PaymentRequirements
   ): Promise<VerificationResponse> {
     try {
-      console.log('Verifying payment with CDP facilitator...');
+      // console.log('Verifying payment with CDP facilitator...');
 
       const response = await fetch(`${this.CDP_FACILITATOR_URL}/verify`, {
         method: 'POST',
@@ -120,7 +120,7 @@ export class X402PaymentProcessor {
       }
 
       const result: VerificationResponse = await response.json();
-      console.log('Payment verification result:', result);
+      // console.log('Payment verification result:', result);
 
       return result;
     } catch (error) {
@@ -141,7 +141,7 @@ export class X402PaymentProcessor {
     paymentRequirements: PaymentRequirements
   ): Promise<SettlementResponse> {
     try {
-      console.log('Settling payment with CDP facilitator...');
+      // console.log('Settling payment with CDP facilitator...');
 
       const response = await fetch(`${this.CDP_FACILITATOR_URL}/settle`, {
         method: 'POST',
@@ -160,7 +160,7 @@ export class X402PaymentProcessor {
       }
 
       const result: SettlementResponse = await response.json();
-      console.log('Payment settlement result:', result);
+      // console.log('Payment settlement result:', result);
 
       return result;
     } catch (error) {

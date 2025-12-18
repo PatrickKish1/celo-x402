@@ -2,6 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Railway Icon Animations */
+@keyframes trainOneAnimation {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(247px);
+  }
+}
+
+@keyframes trainTwoAnimation {
+  0% {
+    transform: translateX(-247px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+.group:hover .train-one {
+  animation: trainOneAnimation 1.5s ease-in-out infinite;
+}
+
+.group:hover .train-two {
+  animation: trainTwoAnimation 1.5s ease-in-out infinite;
+}
+
+/* Ensure Railway icon animations work on hover */
+.group:hover svg .train-one {
+  animation: trainOneAnimation 1.5s ease-in-out infinite;
+}
+
+.group:hover svg .train-two {
+  animation: trainTwoAnimation 1.5s ease-in-out infinite;
+}
+
 :root {
   --background: 0 0% 100%;
   --foreground: 0 0% 3.9%;

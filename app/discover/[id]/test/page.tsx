@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 'use client';
 
 import { Header } from '@/components/ui/header';
@@ -8,7 +9,13 @@ import { useParams } from 'next/navigation';
 import { X402Service, x402Service } from '@/lib/x402-service';
 import { x402Wallet } from '@/lib/x402-wallet';
 import { useAppKit, useAppKitAccount } from '@reown/appkit/react';
+import { validateEndpointResponse, validateResponseAgainstSchema } from '@/lib/x402-response-validator';
 import Link from 'next/link';
+import { ArrowLeftIcon, Copy, Check, Eye, EyeOff } from 'lucide-react';
+import { CrossChainPaymentModal } from '@/components/cross-chain-payment-modal';
+import { SquidSwapModal } from '@/components/squid-swap-modal';
+import Image from 'next/image';
+import { x402Payment } from '@/lib/x402-payment';
 
 interface TestRequest {
   method: string;
@@ -18,6 +25,14 @@ interface TestRequest {
   params: Record<string, string>;
 }
 
+interface ResponseValidation {
+  isValid: boolean;
+  hasData: boolean;
+  dataType?: string;
+  error?: string;
+  warnings?: string[];
+}
+
 interface TestResponse {
   status: number;
   statusText: string;
@@ -25,6 +40,7 @@ interface TestResponse {
   body: string;
   time: number;
   error?: string;
+  validation?: ResponseValidation;
 }
 
 export default function ApiTestPage() {
@@ -43,6 +59,12 @@ export default function ApiTestPage() {
   const [isTesting, setIsTesting] = useState(false);
   const [showHeaders, setShowHeaders] = useState(false);
   const [showParams, setShowParams] = useState(false);
+  const [copiedHeaders, setCopiedHeaders] = useState(false);
+  const [copiedBody, setCopiedBody] = useState(false);
+  const [visualizeResponse, setVisualizeResponse] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showSquidSwapModal, setShowSquidSwapModal] = useState(false);
+  const [pendingPaymentRequirement, setPendingPaymentRequirement] = useState<any>(null);
   const { isConnected, address } = useAppKitAccount();
   const { open } = useAppKit();
 
@@ -64,8 +86,9 @@ export default function ApiTestPage() {
         if (serviceData) {
           setService(serviceData);
           // Pre-populate the test request with service details
-          const primaryPayment = serviceData.accepts[0];
-          const schema = primaryPayment.outputSchema.input;
+          const primaryPayment = serviceData?.accepts?.[0];
+          if (!primaryPayment) return;
+          const schema = primaryPayment?.outputSchema?.input;
           
           // Pre-populate headers and params from schema if available
           const defaultHeaders: Record<string, string> = {};
@@ -91,8 +114,8 @@ export default function ApiTestPage() {
           
           setTestRequest(prev => ({
             ...prev,
-            method: schema.method,
-            url: primaryPayment.resource,
+            method: schema?.method || 'GET',
+            url: primaryPayment?.resource || '',
             headers: defaultHeaders,
             body: Object.keys(defaultBody).length > 0 ? JSON.stringify(defaultBody, null, 2) : '',
             params: defaultParams
@@ -217,41 +240,107 @@ export default function ApiTestPage() {
         body: testRequest.method !== 'GET' ? testRequest.body : undefined
       };
 
-      // Use x402 wallet service to make payment request
-      // This will handle the 402 payment flow automatically
-      const response = await x402Wallet.makePaymentRequest(url, requestOptions);
-
-      const responseTime = Date.now() - startTime;
-      
-      // Get response headers
-      const responseHeaders: Record<string, string> = {};
-      response.headers.forEach((value, key) => {
-        responseHeaders[key] = value;
+      // Use proxy to bypass CORS restrictions
+      // First, make initial request through proxy to get payment requirements
+      const proxyResponse = await fetch('/api/proxy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url,
+          method: testRequest.method,
+          headers: requestOptions.headers,
+          body: requestOptions.body,
+          params: testRequest.params,
+        }),
       });
 
-      // Get response body
-      let responseBody = '';
-      try {
-        responseBody = await response.text();
-        // Try to format JSON
+      const proxyData = await proxyResponse.json();
+      
+      // If not 402, return the proxied response
+      if (proxyData.status !== 402) {
+        const nonPaymentResponseTime = Date.now() - startTime;
+        
+        // Get response body
+        let responseBody = proxyData.body || '';
+        let responseData: any = null;
         try {
-          const jsonBody = JSON.parse(responseBody);
-          responseBody = JSON.stringify(jsonBody, null, 2);
+          responseData = JSON.parse(responseBody);
+          responseBody = JSON.stringify(responseData, null, 2);
         } catch {
           // Not JSON, keep as is
         }
-      } catch {
-        responseBody = 'Unable to read response body';
+
+        // Validate response
+        let validationResult = null;
+        if (proxyData.status === 200 && responseData) {
+          const outputSchema = service?.accepts?.[0]?.outputSchema;
+          if (outputSchema) {
+            validationResult = validateResponseAgainstSchema(responseData, outputSchema);
+          } else {
+            const hasData = typeof responseData === 'object' 
+              ? Object.keys(responseData).length > 0
+              : responseBody.length > 10;
+            validationResult = {
+              isValid: hasData,
+              hasData,
+              dataType: typeof responseData === 'object' ? 'json' : 'text',
+              error: hasData ? undefined : 'Response appears to be empty or invalid',
+            };
+          }
+        } else if (proxyData.status === 200 && !responseData && responseBody) {
+          validationResult = {
+            isValid: responseBody.length > 10,
+            hasData: responseBody.length > 10,
+            dataType: 'text',
+            error: responseBody.length <= 10 ? 'Response too small' : undefined,
+          };
+        }
+
+        setTestResponse({
+          status: proxyData.status,
+          statusText: proxyData.statusText || 'OK',
+          headers: proxyData.headers || {},
+          body: responseBody,
+          time: nonPaymentResponseTime,
+          validation: validationResult || undefined,
+        });
+        return;
       }
 
-      setTestResponse({
-        status: response.status,
-        statusText: response.statusText,
-        headers: responseHeaders,
-        body: responseBody,
-        time: responseTime
-      });
+      // Handle 402 payment flow
+      // Parse payment requirements from proxy response
+      let paymentRequirements: any;
+      try {
+        const responseData = typeof proxyData.body === 'string' ? JSON.parse(proxyData.body) : proxyData.body;
+        if (responseData.accepts && Array.isArray(responseData.accepts) && responseData.accepts.length > 0) {
+          const firstAccept = responseData.accepts[0];
+          paymentRequirements = {
+            x402Version: responseData.x402Version || 1,
+            scheme: firstAccept.scheme || 'exact',
+            network: firstAccept.network,
+            maxAmountRequired: firstAccept.maxAmountRequired,
+            resource: firstAccept.resource || url,
+            description: firstAccept.description,
+            mimeType: firstAccept.mimeType,
+            payTo: firstAccept.payTo,
+            maxTimeoutSeconds: firstAccept.maxTimeoutSeconds || 300,
+            asset: firstAccept.asset,
+            extra: firstAccept.extra || { name: 'USD Coin', version: '2' },
+          };
+        } else {
+          paymentRequirements = responseData;
+        }
+      } catch (error) {
+        throw new Error(`Failed to parse payment requirements from 402 response: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
 
+      // Store payment requirement and show modal
+      setPendingPaymentRequirement({ paymentRequirements, url, requestOptions });
+      setShowPaymentModal(true);
+      setIsTesting(false);
+      return; // Exit here and let the modal handle the next step
     } catch (error) {
       setTestResponse({
         status: 0,
@@ -264,6 +353,430 @@ export default function ApiTestPage() {
     } finally {
       setIsTesting(false);
     }
+  };
+
+  // Handle payment with native token (direct payment)
+  const handleProceedWithNativePayment = async () => {
+    if (!pendingPaymentRequirement || !address) return;
+
+    setIsTesting(true);
+    const startTime = Date.now();
+
+    try {
+      const { paymentRequirements, url, requestOptions } = pendingPaymentRequirement;
+
+      // Sign payment using x402 wallet service
+      const signedPayment = await x402Wallet.signPaymentAuthorization(paymentRequirements);
+      const paymentHeader = Buffer.from(JSON.stringify(signedPayment.payload)).toString('base64');
+
+      // Make paid request through proxy
+      const paidProxyResponse = await fetch('/api/proxy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url,
+          method: testRequest.method,
+          headers: {
+            ...requestOptions.headers,
+            'X-PAYMENT': paymentHeader,
+          },
+          body: requestOptions.body,
+          params: testRequest.params,
+        }),
+      });
+
+      const paidProxyData = await paidProxyResponse.json();
+      const responseTime = Date.now() - startTime;
+      
+      // Get response body
+      let responseBody = paidProxyData.body || '';
+      let responseData: any = null;
+      try {
+        responseData = JSON.parse(responseBody);
+        responseBody = JSON.stringify(responseData, null, 2);
+      } catch {
+        // Not JSON, keep as is
+      }
+
+      // Validate response
+      let validationResult = null;
+      if (paidProxyData.status === 200 && responseData) {
+        const outputSchema = service?.accepts?.[0]?.outputSchema;
+        if (outputSchema) {
+          validationResult = validateResponseAgainstSchema(responseData, outputSchema);
+        } else {
+          const hasData = typeof responseData === 'object' 
+            ? Object.keys(responseData).length > 0
+            : responseBody.length > 10;
+          validationResult = {
+            isValid: hasData,
+            hasData,
+            dataType: typeof responseData === 'object' ? 'json' : 'text',
+            error: hasData ? undefined : 'Response appears to be empty or invalid',
+          };
+        }
+      } else if (paidProxyData.status === 200 && !responseData && responseBody) {
+        validationResult = {
+          isValid: responseBody.length > 10,
+          hasData: responseBody.length > 10,
+          dataType: 'text',
+          error: responseBody.length <= 10 ? 'Response too small' : undefined,
+        };
+      }
+
+      setTestResponse({
+        status: paidProxyData.status,
+        statusText: paidProxyData.statusText || 'OK',
+        headers: paidProxyData.headers || {},
+        body: responseBody,
+        time: responseTime,
+        validation: validationResult || undefined,
+      });
+
+      // Clear pending payment
+      setPendingPaymentRequirement(null);
+    } catch (error) {
+      setTestResponse({
+        status: 0,
+        statusText: 'Error',
+        headers: {},
+        body: '',
+        time: 0,
+        error: error instanceof Error ? error.message : 'Unknown error occurred'
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  // Handle payment with swap (cross-chain)
+  const handleProceedWithSwap = async () => {
+    if (!pendingPaymentRequirement || !address) return;
+
+    setIsTesting(true);
+    
+    try {
+      // Close the cross-chain payment modal
+      setShowPaymentModal(false);
+      
+      // Open Squid Swap Modal for cross-chain payment
+      setShowSquidSwapModal(true);
+      
+    } catch (error) {
+      setTestResponse({
+        status: 0,
+        statusText: 'Error',
+        headers: {},
+        body: '',
+        time: 0,
+        error: error instanceof Error ? error.message : 'Failed to initialize cross-chain swap'
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  // Handle swap completion
+  const handleSwapComplete = async (txHash: string) => {
+    if (!pendingPaymentRequirement || !address) return;
+    
+    try {
+      // console.log('Swap completed with tx hash:', txHash);
+      
+      // Close the swap modal
+      setShowSquidSwapModal(false);
+      
+      // Show processing message
+      setTestResponse({
+        status: 200,
+        statusText: 'Processing',
+        headers: {},
+        body: JSON.stringify({
+          message: 'Swap completed! Processing x402 payment...',
+          txHash,
+          note: 'Please wait while we complete the payment and fetch the API response.',
+        }, null, 2),
+        time: 0
+      });
+      
+      // Wait a moment for tokens to settle (same-chain swaps are usually instant)
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Now make the actual x402 payment and API request
+      setIsTesting(true);
+      const startTime = Date.now();
+      
+      const { paymentRequirements, url, requestOptions } = pendingPaymentRequirement;
+      
+      // console.log(' Retrying x402 payment after swap...');
+      
+      // Sign payment using x402 wallet service
+      const payment = await x402Payment.executePayment({
+        amount: paymentRequirements.maxAmountRequired,
+        token: paymentRequirements.asset,
+        recipient: paymentRequirements.payTo,
+        network: paymentRequirements.network,
+        userAddress: address,
+      });
+      
+      // console.log(' Payment signed:', payment);
+      
+      // Make the paid request with payment proof
+      const paidResponse = await fetch(url, {
+        ...requestOptions,
+        headers: {
+          ...requestOptions.headers,
+          'X-Payment-Signature': payment.signature,
+          'X-Payment-Token': payment.token,
+          'X-Payment-Amount': payment.amount,
+        },
+      });
+      
+      const responseTime = Date.now() - startTime;
+      const responseBody = await paidResponse.text();
+      
+      // Try to parse JSON response
+      let responseData: any;
+      let validationResult: ResponseValidation | null = null;
+      
+      try {
+        responseData = JSON.parse(responseBody);
+        const hasData = responseData && Object.keys(responseData).length > 0;
+        
+        if (paidResponse.ok) {
+          validationResult = {
+            isValid: hasData,
+            hasData,
+            dataType: typeof responseData === 'object' ? 'json' : 'text',
+            error: hasData ? undefined : 'Response appears to be empty or invalid',
+          };
+        }
+      } catch (e) {
+        // Not JSON, treat as text
+        validationResult = {
+          isValid: responseBody.length > 10,
+          hasData: responseBody.length > 10,
+          dataType: 'text',
+          error: responseBody.length <= 10 ? 'Response too small' : undefined,
+        };
+      }
+      
+      // Show the actual API response
+      setTestResponse({
+        status: paidResponse.status,
+        statusText: paidResponse.statusText || 'OK',
+        headers: Object.fromEntries(paidResponse.headers.entries()),
+        body: responseBody,
+        time: responseTime,
+        validation: validationResult || undefined,
+      });
+      
+      // Clear pending payment
+      setPendingPaymentRequirement(null);
+      
+    } catch (error) {
+      console.error('Error completing payment after swap:', error);
+      setTestResponse({
+        status: 0,
+        statusText: 'Error',
+        headers: {},
+        body: '',
+        time: 0,
+        error: error instanceof Error ? error.message : 'Failed to complete payment after swap'
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  // Copy to clipboard function
+  const copyToClipboard = async (text: string, type: 'headers' | 'body') => {
+    try {
+      await navigator.clipboard.writeText(text);
+      if (type === 'headers') {
+        setCopiedHeaders(true);
+        setTimeout(() => setCopiedHeaders(false), 2000);
+      } else {
+        setCopiedBody(true);
+        setTimeout(() => setCopiedBody(false), 2000);
+      }
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  // Parse JSON response and detect visualizable content
+  const parseResponseForVisualization = (body: string) => {
+    try {
+      const parsed = JSON.parse(body);
+      return parsed;
+    } catch {
+      return null;
+    }
+  };
+
+  // Check if URL is likely an image
+  const isImageUrl = (url: string): boolean => {
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.ico'];
+    const lowerUrl = url.toLowerCase();
+    return imageExtensions.some(ext => lowerUrl.includes(ext));
+  };
+
+  // Check if a key name suggests it's a URL/link
+  const isLikelyUrlKey = (key: string): boolean => {
+    const urlKeys = ['url', 'link', 'href', 'uri', 'website', 'source'];
+    return urlKeys.some(k => key.toLowerCase().includes(k));
+  };
+
+  // Render visualized response
+  const renderVisualizedResponse = (data: any) => {
+    if (!data) return null;
+
+    // Handle nested result/payload structure
+    let actualData = data;
+    if (data.result && typeof data.result === 'object') {
+      actualData = data.result;
+    }
+    if (actualData.payload && typeof actualData.payload === 'object') {
+      actualData = actualData.payload;
+    }
+
+    // Check if it's an array of objects
+    if (Array.isArray(actualData) || (actualData.results && Array.isArray(actualData.results))) {
+      const items = Array.isArray(actualData) ? actualData : actualData.results;
+      
+      return (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between mb-2">
+            <h5 className="font-mono font-bold text-sm">
+              {items.length} ITEM{items.length !== 1 ? 'S' : ''} FOUND
+            </h5>
+          </div>
+          <div className="grid grid-cols-1 gap-3 max-h-[600px] overflow-y-auto">
+            {items.map((item: any, index: number) => (
+              <div key={index} className="border-2 border-gray-300 p-3 bg-white hover:bg-gray-50 transition-colors">
+                {Object.entries(item).map(([key, value]: [string, any]) => {
+                  // Skip empty values
+                  if (value === null || value === undefined || value === '') return null;
+
+                  // Check if it's a URL/link
+                  const isUrl = isLikelyUrlKey(key) && typeof value === 'string' && (value.startsWith('http://') || value.startsWith('https://'));
+                  const isImage = isUrl && isImageUrl(value as string);
+
+                  return (
+                    <div key={key} className="mb-2 last:mb-0">
+                      <div className="text-xs font-mono font-bold text-gray-600 uppercase mb-0.5">
+                        {key.replace(/_/g, ' ')}
+                      </div>
+                      {isImage ? (
+                        <Image
+                          width={100}
+                          height={100}
+                          src={value as string} 
+                          alt={key} 
+                          className="max-w-full h-auto max-h-48 object-contain border border-gray-300"
+                          onError={(e) => {
+                            // Fallback to link if image fails to load
+                            (e.target as HTMLElement).style.display = 'none';
+                            const link = document.createElement('a');
+                            link.href = value as string;
+                            link.target = '_blank';
+                            link.rel = 'noopener noreferrer';
+                            link.className = 'text-blue-600 hover:underline text-sm break-all';
+                            link.textContent = value as string;
+                            (e.target as HTMLElement).parentNode?.appendChild(link);
+                          }}
+                        />
+                      ) : isUrl ? (
+                        <Link 
+                          href={value as string} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline text-sm break-all"
+                        >
+                          {value as string}
+                        </Link>
+                      ) : typeof value === 'object' ? (
+                        <pre className="text-xs font-mono bg-gray-100 p-2 rounded overflow-x-auto">
+                          {JSON.stringify(value, null, 2)}
+                        </pre>
+                      ) : (
+                        <div className="text-sm text-gray-800 whitespace-pre-wrap break-words">
+                          {String(value)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // Handle single object
+    if (typeof actualData === 'object') {
+      return (
+        <div className="border-2 border-gray-300 p-4 bg-white max-h-[600px] overflow-y-auto">
+          {Object.entries(actualData).map(([key, value]: [string, any]) => {
+            if (value === null || value === undefined) return null;
+
+            const isUrl = isLikelyUrlKey(key) && typeof value === 'string' && (value.startsWith('http://') || value.startsWith('https://'));
+            const isImage = isUrl && isImageUrl(value as string);
+
+            return (
+              <div key={key} className="mb-3 last:mb-0">
+                <div className="text-xs font-mono font-bold text-gray-600 uppercase mb-1">
+                  {key.replace(/_/g, ' ')}
+                </div>
+                {isImage ? (
+                  <Image
+                    width={100}
+                    height={100}
+                    src={value as string} 
+                    alt={key} 
+                    className="max-w-full h-auto max-h-64 object-contain border border-gray-300"
+                    onError={(e) => {
+                      // Fallback to link if image fails to load
+                      (e.target as HTMLElement).style.display = 'none';
+                      const link = document.createElement('a');
+                      link.href = value as string;
+                      link.target = '_blank';
+                      link.rel = 'noopener noreferrer';
+                      link.className = 'text-blue-600 hover:underline text-sm break-all';
+                      link.textContent = value as string;
+                      (e.target as HTMLElement).parentNode?.appendChild(link);
+                    }}
+                  />
+                ) : isUrl ? (
+                  <Link 
+                    href={value as string} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline text-sm break-all"
+                  >
+                    {value as string}
+                  </Link>
+                ) : typeof value === 'object' ? (
+                  <pre className="text-xs font-mono bg-gray-100 p-2 rounded overflow-x-auto">
+                    {JSON.stringify(value, null, 2)}
+                  </pre>
+                ) : (
+                  <div className="text-sm text-gray-800 whitespace-pre-wrap break-words">
+                    {String(value)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    return null;
   };
 
   if (loading) {
@@ -302,7 +815,7 @@ export default function ApiTestPage() {
   }
 
   const tags = x402Service.getServiceTags(service);
-  const primaryPayment = service.accepts[0];
+  const primaryPayment = service?.accepts?.[0];
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -312,8 +825,8 @@ export default function ApiTestPage() {
         <div className="container mx-auto">
           {/* Breadcrumb */}
           <nav className="mb-8">
-            <Link href={`/discover/${encodeURIComponent(serviceId)}`} className="text-blue-600 hover:underline font-mono">
-              ← BACK TO SERVICE DETAILS
+            <Link href={`/discover/${serviceId}`} className="text-blue-600 hover:underline font-mono text-nowrap">
+              <ArrowLeftIcon className="w-4 h-4" /> BACK TO SERVICE DETAILS
             </Link>
           </nav>
 
@@ -323,7 +836,7 @@ export default function ApiTestPage() {
               API TESTER
             </h1>
             <p className="text-xl font-mono text-gray-700 mb-4">
-              Test the {service.metadata.name || service.resource.split('/').pop()} API directly
+              Test the {service?.metadata?.name || service?.resource?.split('/').pop() || 'API'} API directly
             </p>
             <div className="flex flex-wrap gap-2">
               {tags.map(tag => (
@@ -462,13 +975,13 @@ export default function ApiTestPage() {
                 </div>
 
                 {/* Schema-based Body Fields */}
-                {testRequest.method !== 'GET' && service && (service.accepts[0].outputSchema.input as any).bodyFields && (
+                {testRequest.method !== 'GET' && service && service?.accepts?.[0]?.outputSchema?.input && (service.accepts[0]?.outputSchema?.input as any)?.bodyFields && (
                   <div className="mb-4">
                     <label className="block font-mono font-bold text-sm mb-2">
                       REQUEST BODY FIELDS
                     </label>
                     <div className="space-y-3 p-3 border-2 border-gray-300 bg-gray-50">
-                      {Object.entries((service.accepts[0].outputSchema.input as any).bodyFields).map(([fieldName, fieldSchema]: [string, any]) => (
+                      {Object.entries((service.accepts[0]?.outputSchema?.input as any)?.bodyFields || {}).map(([fieldName, fieldSchema]: [string, any]) => (
                         <div key={fieldName}>
                           <label className="block text-xs font-mono mb-1">
                             {fieldName.toUpperCase()}
@@ -541,14 +1054,22 @@ export default function ApiTestPage() {
               </div>
 
               {/* Service Info */}
-              <div className="retro-card">
-                <h3 className="font-mono font-bold mb-2">SERVICE INFORMATION</h3>
-                <div className="text-sm space-y-1">
-                  <div><span className="font-bold">Price:</span> {x402Service.formatUSDCAmount(primaryPayment.maxAmountRequired)} USDC</div>
-                  <div><span className="font-bold">Network:</span> {primaryPayment.network}</div>
-                  <div><span className="font-bold">Timeout:</span> {primaryPayment.maxTimeoutSeconds}s</div>
+              {primaryPayment && (
+                <div className="retro-card">
+                  <h3 className="font-mono font-bold mb-2">SERVICE INFORMATION</h3>
+                  <div className="text-sm space-y-1">
+                    {primaryPayment.maxAmountRequired && (
+                      <div><span className="font-bold">Price:</span> {x402Service.formatUSDCAmount(primaryPayment.maxAmountRequired)} USDC</div>
+                    )}
+                    {primaryPayment.network && (
+                      <div><span className="font-bold">Network:</span> {primaryPayment.network}</div>
+                    )}
+                    {primaryPayment.maxTimeoutSeconds && (
+                      <div><span className="font-bold">Timeout:</span> {primaryPayment.maxTimeoutSeconds}s</div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Response Panel */}
@@ -575,13 +1096,54 @@ export default function ApiTestPage() {
                         <span className="text-sm text-gray-600">
                           {testResponse.time}ms
                         </span>
+                        {testResponse.validation && (
+                          <span className={`px-2 py-1 text-xs font-mono font-bold ${
+                            testResponse.validation.isValid && testResponse.validation.hasData
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            {testResponse.validation.isValid && testResponse.validation.hasData
+                              ? '✓ VALID DATA'
+                              : testResponse.validation.error
+                              ? '⚠ ' + testResponse.validation.error
+                              : '⚠ NO DATA'}
+                          </span>
+                        )}
                       </div>
                     </div>
 
+                    {/* Validation Warnings */}
+                    {testResponse.validation?.warnings && testResponse.validation.warnings.length > 0 && (
+                      <div className="bg-yellow-50 border-2 border-yellow-500 p-3">
+                        <h5 className="font-mono font-bold text-sm mb-1">VALIDATION WARNINGS</h5>
+                        {testResponse.validation.warnings.map((warning, idx) => (
+                          <p key={idx} className="text-xs text-yellow-800 font-mono">{warning}</p>
+                        ))}
+                      </div>
+                    )}
+
                     {/* Response Headers */}
                     <div>
-                      <h4 className="font-mono font-bold text-sm mb-2">RESPONSE HEADERS</h4>
-                      <div className="bg-gray-100 border border-gray-300 p-2 max-h-32 overflow-y-auto">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="font-mono font-bold text-sm">RESPONSE HEADERS</h4>
+                        <button
+                          onClick={() => copyToClipboard(JSON.stringify(testResponse.headers, null, 2), 'headers')}
+                          className="flex items-center gap-1 text-xs font-mono text-blue-600 hover:text-blue-800"
+                        >
+                          {copiedHeaders ? (
+                            <>
+                              <Check className="w-3 h-3" />
+                              COPIED
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3 h-3" />
+                              COPY
+                            </>
+                          )}
+                        </button>
+                      </div>
+                      <div className="bg-gray-100 border border-gray-300 p-2 overflow-y-auto" style={{ maxHeight: '200px', minHeight: '60px', height: 'auto' }}>
                         {Object.entries(testResponse.headers).map(([key, value]) => (
                           <div key={key} className="text-xs font-mono">
                             <span className="font-bold">{key}:</span> {value}
@@ -592,10 +1154,52 @@ export default function ApiTestPage() {
 
                     {/* Response Body */}
                     <div>
-                      <h4 className="font-mono font-bold text-sm mb-2">RESPONSE BODY</h4>
-                      <pre className="bg-gray-100 border border-gray-300 p-3 text-xs font-mono max-h-64 overflow-y-auto whitespace-pre-wrap">
-                        {testResponse.error || testResponse.body}
-                      </pre>
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="font-mono font-bold text-sm">RESPONSE BODY</h4>
+                        <div className="flex items-center gap-2">
+                          {!testResponse.error && parseResponseForVisualization(testResponse.body) && (
+                            <button
+                              onClick={() => setVisualizeResponse(!visualizeResponse)}
+                              className="flex items-center gap-1 text-xs font-mono text-purple-600 hover:text-purple-800"
+                            >
+                              {visualizeResponse ? (
+                                <>
+                                  <EyeOff className="w-3 h-3" />
+                                  RAW
+                                </>
+                              ) : (
+                                <>
+                                  <Eye className="w-3 h-3" />
+                                  VISUALIZE
+                                </>
+                              )}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => copyToClipboard(testResponse.error || testResponse.body, 'body')}
+                            className="flex items-center gap-1 text-xs font-mono text-blue-600 hover:text-blue-800"
+                          >
+                            {copiedBody ? (
+                              <>
+                                <Check className="w-3 h-3" />
+                                COPIED
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3" />
+                                COPY
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                      {visualizeResponse && !testResponse.error ? (
+                        renderVisualizedResponse(parseResponseForVisualization(testResponse.body))
+                      ) : (
+                        <pre className="bg-gray-100 border border-gray-300 p-3 text-xs font-mono overflow-y-auto whitespace-pre-wrap" style={{ maxHeight: '500px', minHeight: '100px', height: 'auto' }}>
+                          {testResponse.error || testResponse.body}
+                        </pre>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -608,20 +1212,55 @@ export default function ApiTestPage() {
               </div>
 
               {/* x402 Payment Info */}
-              <div className="retro-card">
-                <h3 className="font-mono font-bold mb-2">X402 PAYMENT INFO</h3>
-                <div className="text-sm space-y-1">
-                  <div><span className="font-bold">Asset:</span> {primaryPayment.extra.name}</div>
-                  <div><span className="font-bold">Scheme:</span> {primaryPayment.scheme}</div>
-                  <div><span className="font-bold">Pay To:</span> {primaryPayment.payTo.slice(0, 6)}...{primaryPayment.payTo.slice(-4)}</div>
+              {primaryPayment && (
+                <div className="retro-card">
+                  <h3 className="font-mono font-bold mb-2">X402 PAYMENT INFO</h3>
+                  <div className="text-sm space-y-1">
+                      {primaryPayment?.extra?.name && (
+                      <div><span className="font-bold">Asset:</span> {primaryPayment.extra.name}</div>
+                    )}
+                    {primaryPayment?.scheme && (
+                      <div><span className="font-bold">Scheme:</span> {primaryPayment.scheme}</div>
+                    )}
+                    {primaryPayment?.payTo && primaryPayment.payTo.length >= 10 && (
+                      <div><span className="font-bold">Pay To:</span> {primaryPayment.payTo.slice(0, 6)}...{primaryPayment.payTo.slice(-4)}</div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
       </main>
       
       <Footer />
+
+      {/* Cross-Chain Payment Modal */}
+      {pendingPaymentRequirement && address && (
+        <CrossChainPaymentModal
+          open={showPaymentModal}
+          onOpenChange={setShowPaymentModal}
+          paymentRequirement={pendingPaymentRequirement.paymentRequirements}
+          userAddress={address}
+          onProceedWithNative={handleProceedWithNativePayment}
+          onProceedWithSwap={handleProceedWithSwap}
+        />
+      )}
+
+      {/* Squid Swap Modal */}
+      {pendingPaymentRequirement && (
+        <SquidSwapModal
+          isOpen={showSquidSwapModal}
+          onClose={() => {
+            setShowSquidSwapModal(false);
+            setPendingPaymentRequirement(null);
+          }}
+          targetAmount={pendingPaymentRequirement.paymentRequirements?.maxAmountRequired || '0'}
+          targetToken={pendingPaymentRequirement.paymentRequirements?.asset || ''}
+          targetChain={pendingPaymentRequirement.paymentRequirements?.network || 'base'}
+          onSwapComplete={handleSwapComplete}
+        />
+      )}
     </div>
   );
 }

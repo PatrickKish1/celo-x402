@@ -15,6 +15,8 @@ export interface SquidToken {
   chainId: string;
   logoURI?: string;
   coingeckoId?: string;
+  type: 'evm' | 'cosmos' | 'solana' | 'sui'; // Token chain type
+  volatility: string; // Token volatility level
 }
 
 export interface SquidChain {
@@ -180,7 +182,12 @@ export class SquidRouterService {
       }
 
       const data = await response.json();
-      const tokens = data.tokens || [];
+      const tokens = (data.tokens || []).map((token: any) => ({
+        ...token,
+        // Ensure required SDK fields are present
+        type: token.type ?? 'evm',
+        volatility: token.volatility ?? 'stable',
+      }));
       this.tokensCache.set(cacheKey, tokens);
       return tokens;
     } catch (error) {
@@ -321,6 +328,271 @@ export class SquidRouterService {
     const value = BigInt(amount);
     const divisor = BigInt(Math.pow(10, decimals));
     return (Number(value) / Number(divisor)).toFixed(6);
+  }
+
+  /**
+   * Fetch token balance for a given address on a chain
+   * Uses external API or RPC calls
+   */
+  async getTokenBalance(
+    chainId: string,
+    tokenAddress: string,
+    userAddress: string
+  ): Promise<string> {
+    try {
+      // For native tokens, use RPC call
+      if (tokenAddress.toLowerCase() === NATIVE_ETH_ADDRESS.toLowerCase()) {
+        const chain = await this.getChainById(chainId);
+        if (!chain?.rpc?.[0]) {
+          throw new Error(`No RPC URL found for chain ${chainId}`);
+        }
+
+        // Use viem to get balance
+        const { createPublicClient, http, formatEther } = await import('viem');
+        const { mainnet, base, polygon, arbitrum, optimism } = await import('viem/chains');
+        
+        const chainMap: Record<string, any> = {
+          '1': mainnet,
+          '8453': base,
+          '137': polygon,
+          '42161': arbitrum,
+          '10': optimism,
+        };
+
+        const viemChain = chainMap[chainId];
+        if (!viemChain) {
+          throw new Error(`Unsupported chain for balance check: ${chainId}`);
+        }
+
+        const publicClient = createPublicClient({
+          chain: viemChain,
+          transport: http(chain.rpc[0]),
+        });
+
+        const balance = await publicClient.getBalance({
+          address: userAddress as `0x${string}`,
+        });
+
+        return balance.toString();
+      }
+
+      // For ERC20 tokens, use balanceOf call
+      const chain = await this.getChainById(chainId);
+      if (!chain?.rpc?.[0]) {
+        throw new Error(`No RPC URL found for chain ${chainId}`);
+      }
+
+      const { createPublicClient, http } = await import('viem');
+      const { mainnet, base, polygon, arbitrum, optimism } = await import('viem/chains');
+      
+      const chainMap: Record<string, any> = {
+        '1': mainnet,
+        '8453': base,
+        '137': polygon,
+        '42161': arbitrum,
+        '10': optimism,
+      };
+
+      const viemChain = chainMap[chainId];
+      if (!viemChain) {
+        throw new Error(`Unsupported chain for balance check: ${chainId}`);
+      }
+
+      const publicClient = createPublicClient({
+        chain: viemChain,
+        transport: http(chain.rpc[0]),
+      });
+
+      // ERC20 balanceOf ABI
+      const balance = await publicClient.readContract({
+        address: tokenAddress as `0x${string}`,
+        abi: [
+          {
+            constant: true,
+            inputs: [{ name: '_owner', type: 'address' }],
+            name: 'balanceOf',
+            outputs: [{ name: 'balance', type: 'uint256' }],
+            type: 'function',
+          },
+        ],
+        functionName: 'balanceOf',
+        args: [userAddress as `0x${string}`],
+      }) as bigint;
+
+      return balance.toString();
+    } catch (error) {
+      console.error('Error fetching token balance:', error);
+      return '0';
+    }
+  }
+
+  /**
+   * Get chain by chain ID
+   */
+  async getChainById(chainId: string): Promise<SquidChain | null> {
+    const chains = await this.getChains();
+    return chains.find(c => c.chainId === chainId) || null;
+  }
+
+  /**
+   * Estimate fromAmount needed to receive a specific toAmount
+   * Uses CoinGecko prices for approximation
+   */
+  async estimateFromAmount(params: {
+    fromToken: SquidToken;
+    toToken: SquidToken;
+    toAmount: string;
+    slippagePercentage?: number;
+  }): Promise<string> {
+    try {
+      const { Squid } = await import('@0xsquid/sdk');
+      
+      // Initialize Squid SDK - use correct base URL without /v2 suffix
+      // SDK will append endpoints like /sdk-info, /route, etc.
+      const squid = new Squid({
+        baseUrl: 'https://apiplus.squidrouter.com', // Correct URL from docs
+        integratorId: SQUID_INTEGRATOR_ID,
+      });
+      
+      await squid.init();
+      
+      // Get estimated from amount
+      // Cast to any because SquidToken has all required fields but TypeScript can't verify SDK's internal Token type
+      const result = await squid.getFromAmount({
+        fromToken: params.fromToken as any,
+        toToken: params.toToken as any,
+        toAmount: params.toAmount,
+        slippagePercentage: params.slippagePercentage || 1.5,
+      });
+      
+      return result;
+    } catch (error) {
+      console.error('Error estimating fromAmount:', error);
+      // console.log('Using fallback price estimation...');
+      
+      // Fallback: Manual estimation based on token prices
+      // This is a rough estimate - we need to convert between token units
+      const fromDecimals = params.fromToken.decimals;
+      const toDecimals = params.toToken.decimals;
+      
+      // Get USD prices if available from token data
+      const fromPrice = (params.fromToken as any).usdPrice || 1;
+      const toPrice = (params.toToken as any).usdPrice || 1;
+      
+      // Convert toAmount to human-readable
+      const toAmountInUnits = Number(params.toAmount) / Math.pow(10, toDecimals);
+      
+      // Calculate USD value needed
+      const usdValue = toAmountInUnits * toPrice;
+      
+      // Calculate how many from tokens needed for that USD value
+      const fromAmountInUnits = usdValue / fromPrice;
+      
+      // Add slippage buffer (default 1.5% becomes 1.015)
+      const slippage = (params.slippagePercentage || 1.5) / 100;
+      const fromAmountWithSlippage = fromAmountInUnits * (1 + slippage);
+      
+      // Convert back to atomic units
+      const fallbackAmount = BigInt(Math.ceil(fromAmountWithSlippage * Math.pow(10, fromDecimals)));
+      
+      // console.log('Fallback calculation:', {
+      //   toAmount: params.toAmount,
+      //   toDecimals,
+      //   toPrice,
+      //   toAmountInUnits,
+      //   usdValue,
+      //   fromPrice,
+      //   fromAmountInUnits,
+      //   fromAmountWithSlippage,
+      //   fromDecimals,
+      //   fallbackAmount: fallbackAmount.toString()
+      // });
+      
+      return fallbackAmount.toString();
+    }
+  }
+
+  /**
+   * Get all EVM token balances for a user across multiple chains
+   * This is much more efficient than checking each token individually
+   */
+  async getEvmBalances(params: {
+    userAddress: string;
+    chains?: (string | number)[];
+  }): Promise<Array<{
+    address: string;
+    symbol: string;
+    name: string;
+    decimals: number;
+    balance: string;
+    chainId: string;
+    logoURI?: string;
+    usdPrice?: number;
+  }>> {
+    try {
+      const { Squid } = await import('@0xsquid/sdk');
+      
+      // Initialize Squid SDK with correct base URL
+      const squid = new Squid({
+        baseUrl: 'https://apiplus.squidrouter.com',
+        integratorId: SQUID_INTEGRATOR_ID,
+      });
+      
+      await squid.init();
+      
+      // Get all balances using SDK
+      const balances = await squid.getEvmBalances({
+        userAddress: params.userAddress,
+        chains: params.chains,
+      });
+      
+      return balances as any;
+    } catch (error) {
+      console.error('Error fetching EVM balances:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get all balances (EVM + Cosmos) for a user
+   */
+  async getAllBalances(params: {
+    evmAddress?: string;
+    chainIds?: (string | number)[];
+  }): Promise<{
+    evmBalances?: Array<{
+      address: string;
+      symbol: string;
+      name: string;
+      decimals: number;
+      balance: string;
+      chainId: string;
+      logoURI?: string;
+      usdPrice?: number;
+    }>;
+  }> {
+    try {
+      const { Squid } = await import('@0xsquid/sdk');
+      
+      // Initialize Squid SDK with correct base URL
+      const squid = new Squid({
+        baseUrl: 'https://apiplus.squidrouter.com',
+        integratorId: SQUID_INTEGRATOR_ID,
+      });
+      
+      await squid.init();
+      
+      // Get all balances using SDK
+      const balances = await squid.getAllBalances({
+        evmAddress: params.evmAddress,
+        chainIds: params.chainIds,
+      });
+      
+      return balances as any;
+    } catch (error) {
+      console.error('Error fetching all balances:', error);
+      return {};
+    }
   }
 
   /**

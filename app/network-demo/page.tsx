@@ -4,6 +4,7 @@ import { Header } from '@/components/ui/header';
 import { Footer } from '@/components/ui/footer';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { ArrowLeftIcon } from 'lucide-react';
 
 interface Node {
   id: string;
@@ -256,7 +257,7 @@ export default function NetworkDemoPage() {
           {/* Breadcrumb */}
           <nav className="mb-8">
             <Link href="/discover" className="text-blue-600 hover:underline font-mono">
-              ← BACK TO DISCOVERY
+              <ArrowLeftIcon className="w-4 h-4" /> BACK TO DISCOVERY
             </Link>
           </nav>
 

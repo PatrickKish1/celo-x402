@@ -2,43 +2,40 @@
 'use client';
 
 import { Header } from '@/components/ui/header';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-
-// Mock service data - in production this would come from API
-const mockService = {
-  id: '1',
-  name: 'Weather Data API',
-  status: 'active',
-  upstreamUrl: 'https://api.weather.com/v1',
-  proxyUrl: 'https://x402.yourdomain.com/svc/weather',
-  description: 'Real-time weather information and forecasts for global locations with historical data access.',
-  endpoints: [
-    { id: '1', path: '/current', method: 'GET', price: '0.05', description: 'Current weather data' },
-    { id: '2', path: '/forecast', method: 'GET', price: '0.10', description: 'Weather forecast data' },
-    { id: '3', path: '/historical', method: 'GET', price: '0.15', description: 'Historical weather data' }
-  ],
-  headers: [
-    { id: '1', key: 'X-API-Version', value: 'v1', required: true },
-    { id: '2', key: 'X-Client-ID', value: 'weather-app', required: false }
-  ],
-  discoverable: true,
-  network: 'base',
-  currency: 'USDC',
-  docsType: 'swagger',
-  docsUrl: 'https://api.weather.com/v1/swagger.json',
-  healthEndpoint: '/health'
-};
+import { ArrowLeftIcon } from 'lucide-react';
+import { DEFAULT_MOCK_SERVICE, fetchServiceById, type MockService } from '@/lib/mock-services';
 
 export default function ServiceEditPage() {
   const params = useParams();
   const router = useRouter();
   const serviceId = params.id as string;
   
-  const [service, setService] = useState(mockService);
+  const [service, setService] = useState<MockService>(DEFAULT_MOCK_SERVICE);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+
+  // Fetch service data on mount
+  useEffect(() => {
+    const loadService = async () => {
+      setIsLoading(true);
+      try {
+        const serviceData = await fetchServiceById(serviceId);
+        if (serviceData) {
+          setService(serviceData);
+        }
+      } catch (error) {
+        console.error('Error loading service:', error);
+        setSaveMessage('Error loading service data');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadService();
+  }, [serviceId]);
 
   // Update service field
   const updateService = (field: string, value: any) => {
@@ -116,13 +113,48 @@ export default function ServiceEditPage() {
     setSaveMessage('');
     
     try {
-      // TODO: Implement actual API call to save changes
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
+      // Get backend URL from environment or use default
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+      
+      const response = await fetch(`${backendUrl}/api/user-services/${serviceId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: service.name,
+          description: service.description,
+          upstreamUrl: service.upstreamUrl,
+          proxyUrl: service.proxyUrl,
+          status: service.status,
+          network: service.network,
+          currency: service.currency,
+          discoverable: service.discoverable,
+          healthEndpoint: service.healthEndpoint,
+          docsType: service.docsType,
+          docsUrl: service.docsUrl,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || data.details || 'Failed to save changes');
+      }
       
       setSaveMessage('Changes saved successfully!');
       setTimeout(() => setSaveMessage(''), 3000);
-    } catch (error) {
-      setSaveMessage('Error saving changes. Please try again.');
+      
+      // Optionally update local state with returned data
+      if (data.service) {
+        setService(prev => ({
+          ...prev,
+          ...data.service,
+        }));
+      }
+    } catch (error: any) {
+      console.error('Error saving changes:', error);
+      setSaveMessage(`Error saving changes: ${error.message || 'Please try again.'}`);
     } finally {
       setIsSaving(false);
     }
@@ -137,8 +169,8 @@ export default function ServiceEditPage() {
           {/* Page Header */}
           <div className="mb-8">
             <nav className="mb-6">
-              <Link href="/dashboard" className="text-blue-600 hover:underline font-mono">
-                ← BACK TO DASHBOARD
+              <Link href="/dashboard" className="text-blue-600 hover:underline font-mono text-nowrap">
+                <ArrowLeftIcon className="w-4 h-4" /> BACK TO DASHBOARD
               </Link>
               <span className="mx-2 text-gray-400">/</span>
               <Link href={`/dashboard/services/${serviceId}`} className="text-blue-600 hover:underline font-mono">

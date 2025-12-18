@@ -8,6 +8,9 @@ import { X402Service, x402Service } from '@/lib/x402-service';
 import { DocumentationModal } from '@/components/documentation-modal';
 import { IntegrationModal } from '@/components/integration-modal';
 import Link from 'next/link';
+import { ArrowLeftIcon } from 'lucide-react';
+
+
 
 export default function ServiceDetailsPage() {
   const params = useParams();
@@ -77,8 +80,8 @@ export default function ServiceDetailsPage() {
   }
 
   const tags = x402Service.getServiceTags(service);
-  const primaryPayment = service.accepts[0];
-  const price = x402Service.formatUSDCAmount(primaryPayment.maxAmountRequired);
+  const primaryPayment = service?.accepts?.[0];
+  const price = x402Service.formatUSDCAmount(primaryPayment?.maxAmountRequired || '0');
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -88,8 +91,8 @@ export default function ServiceDetailsPage() {
         <div className="container mx-auto">
           {/* Breadcrumb */}
           <nav className="mb-8">
-            <Link href="/discover" className="text-blue-600 hover:underline font-mono">
-              ← BACK TO DISCOVERY
+            <Link href="/discover" className="text-blue-600 hover:underline font-mono text-nowrap">
+              <ArrowLeftIcon className="w-4 h-4" /> BACK TO DISCOVERY
             </Link>
           </nav>
 
@@ -98,10 +101,10 @@ export default function ServiceDetailsPage() {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
               <div className="flex-1">
                 <h1 className="text-4xl font-bold font-mono tracking-wider mb-4">
-                  {service.metadata.name || service.resource.split('/').pop() || 'X402 Service'}
+                  {service?.metadata?.name || service?.metadata?.title || service?.resource?.split('/').pop() || 'X402 Service'}
                 </h1>
                 <p className="text-xl font-mono text-gray-700 mb-4">
-                  {service.metadata.description || 'Professional x402 API service with instant payment integration.'}
+                  {service?.accepts?.[0]?.description || service?.metadata?.description || 'Professional x402 API service with instant payment integration.'}
                 </p>
                 <div className="flex flex-wrap gap-2 mb-4">
                   {tags.map(tag => (
@@ -157,13 +160,13 @@ export default function ServiceDetailsPage() {
               PAYMENT REQUIREMENTS
             </h2>
             <div className="space-y-4">
-              {service.accepts.map((payment, index) => (
+              {service?.accepts?.map((payment, index) => (
                 <div key={index} className="border-2 border-black p-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <div className="font-mono font-bold mb-2">PAYMENT ASSET</div>
                       <div className="text-gray-600 font-mono">
-                        {payment.extra.name} ({payment.asset.slice(0, 6)}...{payment.asset.slice(-4)})
+                        {payment?.extra?.name || 'Unknown'} ({payment?.asset?.slice(0, 6) || ''}...{payment?.asset?.slice(-4) || ''})
                       </div>
                     </div>
                     <div>
@@ -205,13 +208,13 @@ export default function ServiceDetailsPage() {
               <div>
                 <div className="font-mono font-bold mb-2">HTTP METHOD</div>
                 <div className="text-gray-600 font-mono">
-                  {primaryPayment.outputSchema.input.method}
+                  {primaryPayment?.outputSchema?.input?.method || 'N/A'}
                 </div>
               </div>
               <div>
                 <div className="font-mono font-bold mb-2">RESOURCE URL</div>
                 <div className="text-gray-600 font-mono text-sm break-all">
-                  {primaryPayment.resource}
+                  {primaryPayment?.resource || service?.resource || 'N/A'}
                 </div>
               </div>
               <div>
@@ -226,7 +229,7 @@ export default function ServiceDetailsPage() {
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row gap-4 mb-8">
             <Link 
-              href={`/discover/${encodeURIComponent(serviceId)}/test`}
+              href={`/discover/${serviceId}/test`}
               className="retro-button flex-1 text-center"
             >
               TEST API
@@ -262,7 +265,7 @@ export default function ServiceDetailsPage() {
           )}
 
           {/* Metadata */}
-          {Object.keys(service.metadata).length > 0 && (
+          {service?.metadata && typeof service.metadata === 'object' && Object.keys(service.metadata).length > 0 && (
             <div className="retro-card">
               <h2 className="text-2xl font-bold font-mono mb-4 tracking-wide">
                 ADDITIONAL METADATA

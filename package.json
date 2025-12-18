@@ -9,10 +9,14 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@0xsquid/sdk": "^2.11.0",
+    "@0xsquid/squid-types": "^0.1.198",
     "@coinbase/onchainkit": "latest",
     "@coinbase/x402": "^1.0.1",
     "@farcaster/miniapp-sdk": "^0.1.9",
     "@layerzerolabs/lz-v2-utilities": "^3.0.151",
+    "@radix-ui/react-alert-dialog": "^1.1.15",
+    "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-popover": "^1.1.15",
@@ -30,7 +34,7 @@
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.1",
     "lucide-react": "^0.540.0",
-    "next": "15.3.6",
+    "next": "15.3.8",
     "next-themes": "^0.4.6",
     "porto": "^0.2.37",
     "react": "^18",

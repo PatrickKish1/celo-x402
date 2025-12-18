@@ -6,6 +6,7 @@ import { x402ResourceManager } from './x402-resource-manager';
 export interface DashboardStats {
   totalServices: number;
   activeServices: number;
+  userServices: number; // Services owned by current user
   totalCalls: number;
   totalRevenue: number;
   monthlyCalls: number;
@@ -15,7 +16,7 @@ export interface DashboardStats {
 export interface ServiceData {
   id: string;
   name: string;
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'pending';
   upstreamUrl: string;
   proxyUrl: string;
   endpoints: number;
@@ -65,19 +66,26 @@ export class X402DashboardService {
     }
   }
 
-  async getDashboardStats(): Promise<DashboardStats> {
+  async getDashboardStats(userAddress?: string): Promise<DashboardStats> {
     try {
       const registeredServices = x402ResourceManager.getAllResources();
       const discoveredServices = await x402Discovery.fetchLiveServices();
 
       const cachedStats = this.getFromStorage<DashboardStats>(this.STATS_KEY);
       
+      // Import user service manager
+      const { userServiceManager } = await import('./user-services');
+      
       const totalServices = registeredServices.length + discoveredServices.length;
       const activeServices = registeredServices.length;
+      const userServices = userAddress 
+        ? userServiceManager.getUserServiceCount(userAddress)
+        : 0;
       
       const stats: DashboardStats = {
         totalServices,
         activeServices,
+        userServices,
         totalCalls: cachedStats?.totalCalls || 0,
         totalRevenue: cachedStats?.totalRevenue || 0,
         monthlyCalls: cachedStats?.monthlyCalls || 0,
@@ -91,6 +99,7 @@ export class X402DashboardService {
       return this.getFromStorage<DashboardStats>(this.STATS_KEY) || {
         totalServices: 0,
         activeServices: 0,
+        userServices: 0,
         totalCalls: 0,
         totalRevenue: 0,
         monthlyCalls: 0,
@@ -99,8 +108,28 @@ export class X402DashboardService {
     }
   }
 
-  async getServices(): Promise<ServiceData[]> {
+  async getServices(userAddress?: string): Promise<ServiceData[]> {
     try {
+      // If user address provided, get user-specific services
+      if (userAddress) {
+        const { userServiceManager } = await import('./user-services');
+        const userServices = userServiceManager.getUserServices(userAddress);
+        
+        return userServices.map(service => ({
+          id: service.id,
+          name: service.name,
+          status: service.status as 'active' | 'inactive' | 'pending',
+          upstreamUrl: service.upstreamUrl || service.resource,
+          proxyUrl: service.proxyUrl || `/api/x402/${service.resource}`,
+          endpoints: 1, // Default, can be enhanced
+          totalCalls: 0,
+          totalRevenue: 0,
+          discoverable: service.discoverable,
+          createdAt: service.createdAt.split('T')[0],
+        }));
+      }
+
+      // Otherwise return all registered services
       const registeredServices = x402ResourceManager.getAllResources();
       
       const services: ServiceData[] = registeredServices.map((service, index) => {
@@ -111,7 +140,7 @@ export class X402DashboardService {
         return {
           id: `service-${index}`,
           name: service.metadata?.title || service.resource.split('/').pop() || 'Unnamed Service',
-          status: 'active' as const,
+          status: 'active' as 'active' | 'inactive' | 'pending',
           upstreamUrl: service.resource,
           proxyUrl: `/api/x402/${service.resource}`,
           endpoints: service.accepts.length,

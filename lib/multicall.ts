@@ -3,8 +3,97 @@
 // Contract: 0xcA11bde05977b3631167028862bE2a173976CA11 (deployed on 250+ chains)
 
 import { rateLimiters } from './rate-limiter';
+import { encodeFunctionData, decodeFunctionResult, type Abi } from 'viem';
 
 export const MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
+
+// Multicall3 ABI - only the functions we need
+export const MULTICALL3_ABI = [
+  {
+    inputs: [
+      {
+        components: [
+          { internalType: 'address', name: 'target', type: 'address' },
+          { internalType: 'bool', name: 'allowFailure', type: 'bool' },
+          { internalType: 'bytes', name: 'callData', type: 'bytes' }
+        ],
+        internalType: 'struct Multicall3.Call3[]',
+        name: 'calls',
+        type: 'tuple[]'
+      }
+    ],
+    name: 'aggregate3',
+    outputs: [
+      {
+        components: [
+          { internalType: 'bool', name: 'success', type: 'bool' },
+          { internalType: 'bytes', name: 'returnData', type: 'bytes' }
+        ],
+        internalType: 'struct Multicall3.Result[]',
+        name: 'returnData',
+        type: 'tuple[]'
+      }
+    ],
+    stateMutability: 'payable',
+    type: 'function'
+  },
+  {
+    inputs: [
+      {
+        components: [
+          { internalType: 'address', name: 'target', type: 'address' },
+          { internalType: 'bool', name: 'allowFailure', type: 'bool' },
+          { internalType: 'bytes', name: 'callData', type: 'bytes' }
+        ],
+        internalType: 'struct Multicall3.Call3[]',
+        name: 'calls',
+        type: 'tuple[]'
+      }
+    ],
+    name: 'aggregate3Value',
+    outputs: [
+      {
+        components: [
+          { internalType: 'bool', name: 'success', type: 'bool' },
+          { internalType: 'bytes', name: 'returnData', type: 'bytes' }
+        ],
+        internalType: 'struct Multicall3.Result[]',
+        name: 'returnData',
+        type: 'tuple[]'
+      }
+    ],
+    stateMutability: 'payable',
+    type: 'function'
+  },
+  {
+    inputs: [],
+    name: 'getBlockNumber',
+    outputs: [{ internalType: 'uint256', name: 'blockNumber', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  {
+    inputs: [],
+    name: 'getCurrentBlockTimestamp',
+    outputs: [{ internalType: 'uint256', name: 'timestamp', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  {
+    inputs: [],
+    name: 'getChainId',
+    outputs: [{ internalType: 'uint256', name: 'chainid', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  {
+    inputs: [{ internalType: 'address', name: 'addr', type: 'address' }],
+    name: 'getEthBalance',
+    outputs: [{ internalType: 'uint256', name: 'balance', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function'
+  }
+] as const;
 
 export interface Call3 {
   target: string;
@@ -247,45 +336,52 @@ export class MulticallService {
    * Encode aggregate3 call data
    */
   private encodeAggregate3(calls: Call3[]): string {
-    // Function selector for aggregate3(Call3[] calldata calls)
-    const selector = '0x82ad56cb';
-    
-    // Simplified encoding - in production, use a proper ABI encoder like ethers.js
-    // For now, this is a placeholder
-    // You would encode the Call3[] array according to ABI encoding rules
-    
-    return selector;
+    return encodeFunctionData({
+      abi: MULTICALL3_ABI,
+      functionName: 'aggregate3',
+      args: [calls.map(call => ({
+        target: call.target as `0x${string}`,
+        allowFailure: call.allowFailure,
+        callData: call.callData as `0x${string}`
+      }))]
+    });
   }
 
   /**
    * Encode aggregate3Value call data
    */
   private encodeAggregate3Value(calls: Call3[]): string {
-    // Function selector for aggregate3Value(Call3[] calldata calls)
-    const selector = '0x174dea71';
-    
-    return selector;
+    return encodeFunctionData({
+      abi: MULTICALL3_ABI,
+      functionName: 'aggregate3Value',
+      args: [calls.map(call => ({
+        target: call.target as `0x${string}`,
+        allowFailure: call.allowFailure,
+        callData: call.callData as `0x${string}`
+      }))]
+    });
   }
 
   /**
    * Decode aggregate3 results
    */
   private decodeAggregate3Results(data: string, expectedLength: number): Result[] {
-    // Simplified decoding - in production, use a proper ABI decoder like ethers.js
-    // For now, return empty array
-    // You would decode the Result[] array according to ABI encoding rules
-    
-    const results: Result[] = [];
-    
-    // This is a placeholder - proper ABI decoding would go here
-    for (let i = 0; i < expectedLength; i++) {
-      results.push({
-        success: true,
-        returnData: '0x',
-      });
+    try {
+      const decoded = decodeFunctionResult({
+        abi: MULTICALL3_ABI,
+        functionName: 'aggregate3',
+        data: data as `0x${string}`
+      }) as Array<{ success: boolean; returnData: `0x${string}` }>;
+
+      return decoded.map(result => ({
+        success: result.success,
+        returnData: result.returnData
+      }));
+    } catch (error) {
+      console.error('Error decoding multicall results:', error);
+      // Return empty results array on decode error
+      return Array(expectedLength).fill({ success: false, returnData: '0x' });
     }
-    
-    return results;
   }
 }
 

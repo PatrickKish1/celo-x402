@@ -36,7 +36,7 @@ export class X402ProxyService {
     try {
       const url = `${config.upstreamUrl}${config.targetPath}`;
       
-      console.log(`Proxying ${config.method} request to:`, url);
+      // console.log(`Proxying ${config.method} request to:`, url);
 
       // Build headers
       const headers: Record<string, string> = {
@@ -303,7 +303,7 @@ export class X402ProxyService {
     // Check cache
     const cached = this.cache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
-      console.log('Returning cached proxy response');
+      // console.log('Returning cached proxy response');
       return {
         success: true,
         status: 200,

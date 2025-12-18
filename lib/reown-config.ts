@@ -49,6 +49,8 @@ export const networks = [
 export type Networks = typeof networks;
 
 // 4. Create Wagmi Adapter
+// Note: Networks from @reown/appkit/networks already have RPC URLs configured
+// The WagmiAdapter will use these RPC URLs automatically for balance fetching
 export const wagmiAdapter = new WagmiAdapter({
   projectId: projectId!,
   networks,
@@ -66,7 +68,7 @@ export const appKit = createAppKit({
   networks,
   metadata,
   features: {
-    analytics: true, // Enable analytics
+    analytics: process.env.NODE_ENV === 'production', // Only enable analytics in production to avoid dev errors
     email: true, // Enable email login
     socials: ['google', 'github', 'apple'], // Enable social logins
     emailShowWallets: true, // Show wallet options with email

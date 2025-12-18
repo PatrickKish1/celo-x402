@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars, prefer-const */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // Real CDP x402 Bazaar Discovery Service
 import { X402Service, X402PaymentRequirement, X402BazaarResponse } from './x402-service';
 import { rateLimiters } from './rate-limiter';
@@ -25,7 +26,7 @@ export interface FacilitatorConfig {
 export class X402DiscoveryService {
   private static instance: X402DiscoveryService;
   private cache: Map<string, { data: X402Service[]; timestamp: number }> = new Map();
-  private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+  private readonly CACHE_DURATION = 30 * 60 * 1000; // 30 minutes (increased from 5 minutes)
   private readonly LOCALSTORAGE_KEY = 'x402_services_cache';
 
   static getInstance(): X402DiscoveryService {
@@ -47,7 +48,7 @@ export class X402DiscoveryService {
       
       const parsed = JSON.parse(stored);
       if (Date.now() - parsed.timestamp < this.CACHE_DURATION) {
-        console.log('Using localStorage cached services');
+        // console.log('Using localStorage cached services');
         return parsed.data;
       }
       
@@ -84,7 +85,7 @@ export class X402DiscoveryService {
       // Check memory cache first
       const memCached = this.cache.get(cacheKey);
       if (memCached && Date.now() - memCached.timestamp < this.CACHE_DURATION) {
-        console.log('Returning memory cached all x402 services');
+        // console.log('Returning memory cached all x402 services');
         return memCached.data;
       }
 
@@ -101,7 +102,7 @@ export class X402DiscoveryService {
       const limit = 100; // Max per page
       let hasMore = true;
 
-      console.log('Fetching ALL x402 services from CDP Bazaar with pagination...');
+      // console.log('Fetching ALL x402 services from CDP Bazaar with pagination...');
 
       while (hasMore) {
         const params = new URLSearchParams();
@@ -111,7 +112,7 @@ export class X402DiscoveryService {
 
         const url = `${X402_BAZAAR_URL}${params.toString() ? '?' + params.toString() : ''}`;
         
-        console.log(`Fetching page ${Math.floor(offset / limit) + 1} from backend API`);
+        // console.log(`Fetching page ${Math.floor(offset / limit) + 1} from backend API`);
         
         const response = await fetch(url, {
           method: 'GET',
@@ -131,9 +132,11 @@ export class X402DiscoveryService {
         }
 
         const data: X402BazaarResponse = await response.json();
-        const items = data.items || [];
+        const items = (data?.items || []).filter((item: any) => 
+          item != null && item?.resource
+        );
         
-        console.log(`Successfully fetched page ${Math.floor(offset / limit) + 1}: ${items.length} services`);
+        // console.log(`Successfully fetched page ${Math.floor(offset / limit) + 1}: ${items.length} services`);
         
         allItems = [...allItems, ...items];
         
@@ -153,7 +156,7 @@ export class X402DiscoveryService {
         }
       }
 
-      console.log(`Successfully fetched ${allItems.length} total x402 services`);
+      // console.log(`Successfully fetched ${allItems.length} total x402 services`);
 
       // Apply client-side filters
       let filteredItems = allItems;
@@ -184,7 +187,7 @@ export class X402DiscoveryService {
       // Try to return localStorage cache as fallback
       const fallback = this.getLocalStorageCache(cacheKey);
       if (fallback && fallback.length > 0) {
-        console.log('Using stale localStorage cache as fallback');
+        // console.log('Using stale localStorage cache as fallback');
         return fallback;
       }
       
@@ -207,7 +210,7 @@ export class X402DiscoveryService {
       // Check memory cache first
       const memCached = this.cache.get(cacheKey);
       if (memCached && Date.now() - memCached.timestamp < this.CACHE_DURATION) {
-        console.log('Returning memory cached x402 services');
+        // console.log('Returning memory cached x402 services');
         return memCached.data;
       }
 
@@ -226,7 +229,7 @@ export class X402DiscoveryService {
 
       const url = `${X402_BAZAAR_URL}${params.toString() ? '?' + params.toString() : ''}`;
       
-      console.log('Fetching live x402 services from backend API:', url);
+      // console.log('Fetching live x402 services from backend API:', url);
 
       const response = await fetch(url, {
         method: 'GET',
@@ -241,7 +244,7 @@ export class X402DiscoveryService {
 
       const data: X402BazaarResponse = await response.json();
       
-      console.log(`Successfully fetched ${data.items?.length || 0} x402 services`);
+      // console.log(`Successfully fetched ${data.items?.length || 0} x402 services`);
 
       // Apply client-side filters
       let filteredItems = data.items || [];
@@ -272,7 +275,7 @@ export class X402DiscoveryService {
       // Try to return localStorage cache as fallback
       const fallback = this.getLocalStorageCache(cacheKey);
       if (fallback && fallback.length > 0) {
-        console.log('Using stale localStorage cache as fallback');
+        // console.log('Using stale localStorage cache as fallback');
         return fallback;
       }
       
@@ -291,7 +294,7 @@ export class X402DiscoveryService {
     if (memCached && Date.now() - memCached.timestamp < this.CACHE_DURATION) {
       const service = memCached.data.find(s => s.resource === resourceUrl);
       if (service) {
-        console.log('Found service in memory cache');
+        // console.log('Found service in memory cache');
         return service;
       }
     }
@@ -301,7 +304,7 @@ export class X402DiscoveryService {
     if (localCached && localCached.length > 0) {
       const service = localCached.find(s => s.resource === resourceUrl);
       if (service) {
-        console.log('Found service in localStorage cache');
+        // console.log('Found service in localStorage cache');
         return service;
       }
     }
@@ -319,7 +322,7 @@ export class X402DiscoveryService {
                 if (parsed.data && Array.isArray(parsed.data)) {
                   const service = parsed.data.find((s: X402Service) => s.resource === resourceUrl);
                   if (service) {
-                    console.log(`Found service in localStorage (${key})`);
+                    // console.log(`Found service in localStorage (${key})`);
                     return service;
                   }
                 }
@@ -336,7 +339,7 @@ export class X402DiscoveryService {
 
     // Only fetch if not found in cache
     try {
-      console.log('Service not in cache, fetching all services...');
+      // console.log('Service not in cache, fetching all services...');
       const services = await this.fetchAllServices();
       return services.find(s => s.resource === resourceUrl) || null;
     } catch (error) {

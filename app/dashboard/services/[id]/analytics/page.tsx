@@ -4,6 +4,7 @@ import { Header } from '@/components/ui/header';
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { ArrowLeftIcon } from 'lucide-react';
 
 interface ServiceAnalytics {
   serviceId: string;
@@ -130,8 +131,8 @@ export default function ServiceAnalyticsPage() {
           {/* Page Header */}
           <div className="mb-8">
             <nav className="mb-6">
-              <Link href="/dashboard" className="text-blue-600 hover:underline font-mono">
-                ← BACK TO DASHBOARD
+              <Link href="/dashboard" className="text-blue-600 hover:underline font-mono text-nowrap">
+                <ArrowLeftIcon className="w-4 h-4" /> BACK TO DASHBOARD
               </Link>
               <span className="mx-2 text-gray-400">/</span>
               <Link href={`/dashboard/services/${serviceId}`} className="text-blue-600 hover:underline font-mono">

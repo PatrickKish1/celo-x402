@@ -89,7 +89,7 @@ export class X402WalletService {
         transport: custom(ethereum),
       });
 
-      console.log('Wallet connected:', this.currentAddress);
+      // console.log('Wallet connected:', this.currentAddress);
 
       return {
         address: this.currentAddress,
@@ -311,7 +311,7 @@ export class X402WalletService {
             const walletClient = await getWalletClient(config);
             if (walletClient) {
               this.walletClient = walletClient;
-              console.log('Wallet initialized from Wagmi:', this.currentAddress);
+              // console.log('Wallet initialized from Wagmi:', this.currentAddress);
               return;
             }
           } catch (error) {
@@ -330,7 +330,7 @@ export class X402WalletService {
           const walletClient = await getWalletClient(config);
           if (walletClient) {
             this.walletClient = walletClient;
-            console.log('Wallet initialized from Wagmi:', this.currentAddress);
+            // console.log('Wallet initialized from Wagmi:', this.currentAddress);
             return;
           }
         }
@@ -348,7 +348,7 @@ export class X402WalletService {
           chain: this.getChainByChainId(parseInt(chainId, 16)),
           transport: custom(ethereum),
         });
-        console.log('Wallet initialized from window.ethereum:', this.currentAddress);
+        // console.log('Wallet initialized from window.ethereum:', this.currentAddress);
       }
     } catch (error) {
       console.error('Error initializing from Wagmi:', error);

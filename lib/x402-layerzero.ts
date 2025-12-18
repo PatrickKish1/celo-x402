@@ -59,7 +59,8 @@ export class X402LayerZeroService {
 
   /**
    * Send cross-chain message via LayerZero
-   * This initiates a cross-chain x402 payment
+   * NOTE: This requires LayerZero V2 Endpoint contract integration
+   * See: https://docs.layerzero.network/contracts/endpoint-addresses
    */
   async sendCrossChainMessage(
     sourceChain: string,
@@ -67,7 +68,7 @@ export class X402LayerZeroService {
     payload: any
   ): Promise<string> {
     try {
-      console.log(`Sending LayerZero message: ${sourceChain} -> ${destinationChain}`);
+      // console.log(`Sending LayerZero message: ${sourceChain} -> ${destinationChain}`);
 
       // Generate call ID
       const callId = this.generateCallId();
@@ -94,36 +95,31 @@ export class X402LayerZeroService {
 
       this.calls.set(callId, call);
 
-      // In production, this would:
-      // 1. Call LayerZero DVN (Data Verification Network)
-      // 2. Send message via LayerZero Executor
-      // 3. Wait for confirmation on destination chain
+      /**
+       * PRODUCTION IMPLEMENTATION STEPS:
+       * 
+       * 1. Call LayerZero Endpoint contract on source chain:
+       *    - Contract: LayerZero V2 Endpoint (see docs for addresses)
+       *    - Method: send(SendParam calldata _sendParam, MessagingFee calldata _fee, address _refundAddress)
+       * 
+       * 2. Monitor LayerZero DVN (Data Verification Network) for verification:
+       *    - Listen for PacketSent event on source chain
+       *    - Monitor DVN for verification status
+       * 
+       * 3. Wait for message delivery on destination chain:
+       *    - Listen for PacketReceived event on destination chain
+       *    - Verify execution via your application contract
+       * 
+       * 4. Use LayerZero Scan API for status tracking:
+       *    - https://layerzeroscan.com/api
+       *    - Query tx status and delivery confirmation
+       */
 
-      // Simulate message sending
-      setTimeout(() => {
-        this.updateCallStatus(callId, 'sourcePaymentStatus', 'confirmed');
-        this.updateCallStatus(callId, 'sourcePaymentTxHash', `0x${Date.now().toString(16)}`);
-      }, 1000);
-
-      setTimeout(() => {
-        this.updateCallStatus(callId, 'verifyStatus', 'confirmed');
-        this.updateCallStatus(callId, 'verifyHash', `0x${Date.now().toString(16)}`);
-      }, 2000);
-
-      setTimeout(() => {
-        this.updateCallStatus(callId, 'relayStatus', 'confirmed');
-        this.updateCallStatus(callId, 'relayHash', `0x${Date.now().toString(16)}`);
-      }, 3000);
-
-      setTimeout(() => {
-        this.updateCallStatus(callId, 'executionStatus', 'confirmed');
-        this.updateCallStatus(callId, 'executionHash', `0x${Date.now().toString(16)}`);
-        this.updateCallStatus(callId, 'destPaymentHash', `0x${Date.now().toString(16)}`);
-      }, 4000);
-
-      console.log('Cross-chain message sent, callId:', callId);
-
-      return callId;
+      throw new Error(
+        'LayerZero cross-chain messaging requires contract integration. ' +
+        'Deploy LayerZero-compatible contracts and integrate with the Endpoint. ' +
+        'See implementation guide at: https://docs.layerzero.network'
+      );
     } catch (error) {
       console.error('LayerZero message send error:', error);
       throw error;
@@ -155,7 +151,14 @@ export class X402LayerZeroService {
 
   /**
    * Execute cross-chain x402 payment
-   * Full flow: lock on source -> relay message -> unlock on destination
+   * NOTE: Requires LayerZero contract deployment and integration
+   * 
+   * Full production flow:
+   * 1. Lock tokens on source chain in escrow contract
+   * 2. Send LayerZero message with payment details
+   * 3. DVN verifies and relays message to destination
+   * 4. Destination contract executes payment/unlock
+   * 5. Monitor status via events and LayerZero Scan API
    */
   async executeCrossChainPayment(
     sourceChain: string,
@@ -165,9 +168,9 @@ export class X402LayerZeroService {
     payer: string
   ): Promise<CrossChainCall> {
     try {
-      console.log('Executing cross-chain x402 payment...');
+      // console.log('Executing cross-chain x402 payment...');
 
-      // Build payload
+      // Build payment payload
       const payload = {
         type: 'x402_payment',
         amount,
@@ -176,22 +179,16 @@ export class X402LayerZeroService {
         timestamp: Date.now(),
       };
 
-      // Send LayerZero message
-      const callId = await this.sendCrossChainMessage(
-        sourceChain,
-        destinationChain,
-        payload
+      // This requires LayerZero contract integration
+      throw new Error(
+        'Cross-chain payment execution requires LayerZero contracts. ' +
+        'You need to: ' +
+        '1. Deploy x402 payment contracts on source and destination chains ' +
+        '2. Integrate with LayerZero Endpoint for message passing ' +
+        '3. Implement token locking/unlocking mechanisms ' +
+        '4. Set up event listeners for status tracking. ' +
+        'For production, use the Squid Router service (squid-router.ts) which handles this automatically.'
       );
-
-      // Wait for confirmation (in production, use event listeners)
-      await this.waitForExecution(callId);
-
-      const call = this.getCallStatus(callId);
-      if (!call) {
-        throw new Error('Call not found');
-      }
-
-      return call;
     } catch (error) {
       console.error('Cross-chain payment execution error:', error);
       throw error;

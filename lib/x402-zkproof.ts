@@ -60,34 +60,63 @@ export class X402ZKProofService {
 
   /**
    * Verify a zero-knowledge proof
-   * This would typically call a verifier smart contract or service
+   * 
+   * PRODUCTION IMPLEMENTATION:
+   * This must call an on-chain verifier contract deployed from your ZK circuit.
+   * See: app/celo-x402/docs/ZK_PROOF_IMPLEMENTATION.md for full setup guide.
+   * 
+   * Steps:
+   * 1. Generate ZK circuits using Circom/SnarkJS or Noir
+   * 2. Deploy verifier contracts to target chains
+   * 3. Call verifier contract with proof + public signals
+   * 4. Return verification result
    */
   async verifyProof(proof: ZKProof, requirement: ZKProofRequirement): Promise<boolean> {
     try {
-      console.log('Verifying ZK proof for:', requirement.type);
+      // console.log('Verifying ZK proof for:', requirement.type);
 
-      // In production, this would:
-      // 1. Call the verifier contract on-chain
-      // 2. Or send to a verification service
-      // 3. Verify the proof cryptographically
-
-      // Placeholder: validate proof structure
+      // Validate proof structure
       if (!proof.proof || !proof.publicSignals || !proof.verificationKey) {
         console.error('Invalid proof structure');
         return false;
       }
 
-      // Simulate verification delay
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Production: Call on-chain verifier contract
+      if (requirement.verifierContract) {
+        /**
+         * Example on-chain verification:
+         * 
+         * const client = createPublicClient({ chain: base, transport: http() });
+         * 
+         * const isValid = await client.readContract({
+         *   address: requirement.verifierContract as `0x${string}`,
+         *   abi: VERIFIER_ABI,
+         *   functionName: 'verifyProof',
+         *   args: [
+         *     formatProofForSolidity(proof.proof),
+         *     proof.publicSignals
+         *   ]
+         * });
+         * 
+         * return isValid;
+         */
+        
+        throw new Error(
+          `ZK proof verification requires deployed verifier contract at ${requirement.verifierContract}. ` +
+          'See app/celo-x402/docs/ZK_PROOF_IMPLEMENTATION.md for setup instructions.'
+        );
+      }
 
-      // Cache successful verification
+      // For development/testing only - remove in production
+      console.warn('WARNING: Using mock proof verification. Deploy verifier contracts for production.');
+      
+      // Cache for development
       const proofKey = this.getProofKey(proof);
       this.verifiedProofs.set(proofKey, {
         proof,
         timestamp: Date.now(),
       });
 
-      console.log('ZK proof verified successfully');
       return true;
     } catch (error) {
       console.error('ZK proof verification error:', error);
@@ -216,17 +245,43 @@ export class X402ZKProofService {
 
   /**
    * Check if proof matches a specific type
+   * 
+   * PRODUCTION IMPLEMENTATION:
+   * This should verify the proof's public signals match expected values
+   * for the given proof type (e.g., check humanity score for proof-of-human)
    */
   private async matchesProofType(
     proof: ZKProof,
     proofType: { type: string; parameters?: Record<string, string> }
   ): Promise<boolean> {
-    // In production, this would:
-    // 1. Check proof's public signals
-    // 2. Verify against on-chain registry
-    // 3. Validate proof parameters
-
-    // Placeholder: always return true for now
+    /**
+     * Production implementation example:
+     * 
+     * switch (proofType.type) {
+     *   case 'human':
+     *     // Check if first public signal (humanity score) >= threshold
+     *     const humanityScore = BigInt(proof.publicSignals[0]);
+     *     const threshold = BigInt(proof.publicSignals[1]);
+     *     return humanityScore >= threshold;
+     * 
+     *   case 'institution':
+     *     // Check if public signal matches institution ID
+     *     const institutionId = proof.publicSignals[0];
+     *     const expectedId = proofType.parameters?.institution;
+     *     return institutionId === expectedId;
+     * 
+     *   case 'age':
+     *     // Check if age >= 18 from public signal
+     *     const isAdult = proof.publicSignals[0] === '1';
+     *     return isAdult;
+     * 
+     *   default:
+     *     return false;
+     * }
+     */
+    
+    // Development fallback - replace with actual signal validation
+    console.warn(`WARNING: Proof type matching not implemented for ${proofType.type}`);
     return true;
   }
 

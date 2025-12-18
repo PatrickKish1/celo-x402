@@ -56,7 +56,7 @@ export class X402ResourceManager {
    */
   async registerResource(url: string): Promise<RegistrationResult> {
     try {
-      console.log('Registering x402 resource:', url);
+      // console.log('Registering x402 resource:', url);
 
       // Clean URL
       const cleanUrl = this.cleanUrl(url);
@@ -107,7 +107,7 @@ export class X402ResourceManager {
       // Store resource
       this.resources.set(cleanUrl, resource);
 
-      console.log('Resource registered successfully:', cleanUrl);
+      // console.log('Resource registered successfully:', cleanUrl);
 
       return {
         success: true,

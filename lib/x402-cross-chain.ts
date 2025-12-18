@@ -225,8 +225,8 @@ export class X402CrossChainRouter {
   }
 
   /**
-   * Execute cross-chain payment via LayerZero
-   * This is a placeholder - full implementation would require LayerZero contracts
+   * Execute cross-chain payment via LayerZero or Squid Router
+   * NOTE: This requires LayerZero contracts deployed or integration with Squid Router API
    */
   async executeCrossChainPayment(payment: CrossChainPayment): Promise<{
     success: boolean;
@@ -234,7 +234,7 @@ export class X402CrossChainRouter {
     error?: string;
   }> {
     try {
-      console.log('Executing cross-chain payment:', payment);
+      // console.log('Executing cross-chain payment:', payment);
 
       // Validate networks
       if (!this.isNetworkSupported(payment.sourceNetwork) || 
@@ -246,24 +246,19 @@ export class X402CrossChainRouter {
       const route = await this.getBestRoute(payment.sourceNetwork, payment.destinationNetwork);
 
       if (!route) {
-        // Same chain - direct transfer
-        return {
-          success: true,
-          txHash: `0x${Date.now().toString(16)}`, // Mock tx hash
-        };
+        // Same chain - direct transfer via standard ERC20 transfer
+        // This requires wallet client integration
+        // console.log('Same-chain payment - use direct transfer');
+        throw new Error('Same-chain payments should use direct transfer, not cross-chain router');
       }
 
-      // For cross-chain, we would:
-      // 1. Lock tokens on source chain
-      // 2. Send LayerZero message
-      // 3. Wait for confirmation
-      // 4. Unlock/mint on destination chain
+      // For cross-chain payments:
+      // 1. If using LayerZero: Lock tokens on source, send message, unlock on dest
+      // 2. If using Squid Router: Use their API to build and execute swap
+      // 3. Monitor bridge status until completion
 
-      // Placeholder response
-      return {
-        success: true,
-        txHash: `0x${Date.now().toString(16)}`, // Mock tx hash
-      };
+      // This requires actual bridge contract integration
+      throw new Error('Cross-chain execution requires LayerZero or Squid Router contract integration. Use the Squid Router service in squid-router.ts for production implementation.');
     } catch (error) {
       console.error('Cross-chain payment error:', error);
       return {
@@ -275,19 +270,72 @@ export class X402CrossChainRouter {
 
   /**
    * Get transaction status for cross-chain payment
+   * NOTE: This requires RPC provider integration to query actual blockchain state
    */
   async getTransactionStatus(txHash: string, network: string): Promise<{
     status: 'pending' | 'confirmed' | 'failed';
     confirmations: number;
     blockNumber?: number;
   }> {
-    // Placeholder implementation
-    // In production, this would query the blockchain
-    return {
-      status: 'confirmed',
-      confirmations: 12,
-      blockNumber: Date.now(),
-    };
+    const networkConfig = this.getNetworkConfig(network);
+    if (!networkConfig) {
+      throw new Error('Network not supported');
+    }
+
+    try {
+      // Query transaction receipt from RPC
+      const response = await fetch(networkConfig.rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'eth_getTransactionReceipt',
+          params: [txHash],
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error.message);
+      }
+
+      const receipt = data.result;
+      
+      if (!receipt) {
+        return {
+          status: 'pending',
+          confirmations: 0,
+        };
+      }
+
+      // Get current block number for confirmations
+      const blockResponse = await fetch(networkConfig.rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'eth_blockNumber',
+          params: [],
+        }),
+      });
+
+      const blockData = await blockResponse.json();
+      const currentBlock = parseInt(blockData.result, 16);
+      const txBlock = parseInt(receipt.blockNumber, 16);
+      const confirmations = currentBlock - txBlock;
+
+      return {
+        status: receipt.status === '0x1' ? 'confirmed' : 'failed',
+        confirmations,
+        blockNumber: txBlock,
+      };
+    } catch (error) {
+      console.error('Error fetching transaction status:', error);
+      throw error;
+    }
   }
 
   /**

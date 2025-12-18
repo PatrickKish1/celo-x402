@@ -59,7 +59,7 @@ async function callAPI() {
     });
 
     const data = await response.json();
-    console.log('Response:', data);
+    // console.log('Response:', data);
     return data;
   } catch (error) {
     console.error('Error:', error);
@@ -119,7 +119,7 @@ async function callAPI(): Promise<APIResponse> {
 
 // Usage
 callAPI().then(result => {
-  console.log('Success:', result);
+  // console.log('Success:', result);
 }).catch(error => {
   console.error('Failed:', error);
 });`;

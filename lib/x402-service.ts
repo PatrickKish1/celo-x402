@@ -71,34 +71,24 @@ export class X402ServiceManager {
   }
 
   async getServiceDetails(serviceId: string): Promise<X402Service | null> {
+    // serviceId can be either a hash ID or the full resource URL
+    // First, try to find by resource URL (for backward compatibility)
+    // Then try to find by hash ID
+    
     // Check memory cache first
     const cached = this.cache.get(serviceId);
     if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
-      console.log('Using memory cached service details');
+      // console.log('Using memory cached service details');
       return cached.data;
     }
 
+    // Import service ID utilities
+    const { generateServiceId } = await import('./x402-service-id');
+    
     // Check localStorage cache for all services
     if (typeof window !== 'undefined') {
       try {
-        // Try to find service in cached services from localStorage
-        const cacheKeys = ['x402_services_cache_all_{}', 'x402_services_cache_{}'];
-        for (const key of cacheKeys) {
-          const stored = localStorage.getItem(key);
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            if (parsed.data && Array.isArray(parsed.data)) {
-              const service = parsed.data.find((s: X402Service) => s.resource === serviceId);
-              if (service) {
-                console.log('Found service in localStorage cache');
-                this.cache.set(serviceId, { data: service, timestamp: Date.now() });
-                return service;
-              }
-            }
-          }
-        }
-        
-        // Also check all localStorage keys that match the pattern
+        // Check all localStorage keys that match the pattern
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
           if (key && key.startsWith('x402_services_cache_')) {
@@ -107,9 +97,18 @@ export class X402ServiceManager {
               try {
                 const parsed = JSON.parse(stored);
                 if (parsed.data && Array.isArray(parsed.data)) {
-                  const service = parsed.data.find((s: X402Service) => s.resource === serviceId);
+                  // Try to find by resource URL first (backward compatibility)
+                  let service = parsed.data.find((s: X402Service) => s?.resource === serviceId);
+                  
+                  // If not found, try to find by hash ID
+                  if (!service) {
+                    service = parsed.data.find((s: X402Service) => 
+                      s?.resource && generateServiceId(s.resource) === serviceId
+                    );
+                  }
+                  
                   if (service) {
-                    console.log(`Found service in localStorage cache (${key})`);
+                    // console.log(`Found service in localStorage cache (${key})`);
                     this.cache.set(serviceId, { data: service, timestamp: Date.now() });
                     return service;
                   }
@@ -127,9 +126,18 @@ export class X402ServiceManager {
 
     // Only fetch all services if not found in cache
     try {
-      console.log('Service not in cache, fetching from discovery service...');
+      // console.log('Service not in cache, fetching from discovery service...');
       const services = await x402Discovery.fetchAllServices();
-      const service = services.find(s => s.resource === serviceId);
+      
+      // Try to find by resource URL first
+      let service = services.find(s => s?.resource === serviceId);
+      
+      // If not found, try to find by hash ID
+      if (!service) {
+        service = services.find(s => 
+          s?.resource && generateServiceId(s.resource) === serviceId
+        );
+      }
       
       if (service) {
         this.cache.set(serviceId, { data: service, timestamp: Date.now() });
@@ -167,32 +175,40 @@ export class X402ServiceManager {
   }
 
   // Helper method to get service tags from metadata
-  getServiceTags(service: X402Service): string[] {
+  getServiceTags(service: X402Service | null | undefined): string[] {
+    if (!service) return [];
+    
     const tags: string[] = [];
     
-    // Extract tags from metadata
-    if (service.metadata.tags && Array.isArray(service.metadata.tags)) {
+    // Extract tags from metadata with optional chaining
+    if (service?.metadata?.tags && Array.isArray(service.metadata.tags)) {
       tags.push(...service.metadata.tags);
     }
     
     // Extract tags from resource URL
-    const urlParts = service.resource.split('/');
-    if (urlParts.length > 2) {
-      const domain = urlParts[2];
-      if (domain.includes('weather')) tags.push('weather');
-      if (domain.includes('finance') || domain.includes('stock')) tags.push('finance');
-      if (domain.includes('ai') || domain.includes('nlp')) tags.push('ai');
-      if (domain.includes('geo') || domain.includes('location')) tags.push('geolocation');
+    if (service?.resource) {
+      const urlParts = service.resource.split('/');
+      if (urlParts.length > 2) {
+        const domain = urlParts[2] || '';
+        if (domain.includes('weather')) tags.push('weather');
+        if (domain.includes('finance') || domain.includes('stock')) tags.push('finance');
+        if (domain.includes('ai') || domain.includes('nlp')) tags.push('ai');
+        if (domain.includes('geo') || domain.includes('location')) tags.push('geolocation');
+      }
     }
     
-    // Add type-based tags
-    tags.push(service.type);
+    // Add type-based tags with optional chaining
+    if (service?.type) {
+      tags.push(service.type);
+    }
     
     return [...new Set(tags)]; // Remove duplicates
   }
 
   // Helper method to get service rating (placeholder for future implementation)
-  getServiceRating(service: X402Service): number {
+  getServiceRating(service: X402Service | null | undefined): number {
+    if (!service) return 0;
+    
     // This would integrate with a rating system in the future
     // For now, return a mock rating based on service metadata
     const baseRating = 4.5;

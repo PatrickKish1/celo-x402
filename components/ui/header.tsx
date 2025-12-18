@@ -28,22 +28,34 @@ export function Header() {
           </Link>
 
           {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center space-x-6 lg:space-x-8">
+          <nav className="hidden md:flex items-center space-x-2 lg:space-x-4 xl:space-x-6">
             <Link
               href="/discover"
-              className="font-mono text-sm font-medium hover:underline tracking-wide transition-all"
+              className="font-mono text-xs lg:text-sm font-medium hover:underline tracking-wide transition-all whitespace-nowrap"
             >
               DISCOVER APIS
             </Link>
             <Link
+              href="/discover/servers"
+              className="font-mono text-xs lg:text-sm font-medium hover:underline tracking-wide transition-all whitespace-nowrap"
+            >
+              SERVERS
+            </Link>
+            <Link
+              href="/ecosystem"
+              className="font-mono text-xs lg:text-sm font-medium hover:underline tracking-wide transition-all whitespace-nowrap"
+            >
+              ECOSYSTEM
+            </Link>
+            <Link
               href="/dashboard"
-              className="font-mono text-sm font-medium hover:underline tracking-wide transition-all"
+              className="font-mono text-xs lg:text-sm font-medium hover:underline tracking-wide transition-all whitespace-nowrap"
             >
               DASHBOARD
             </Link>
             <Link
               href="/docs"
-              className="font-mono text-sm font-medium hover:underline tracking-wide transition-all"
+              className="font-mono text-xs lg:text-sm font-medium hover:underline tracking-wide transition-all whitespace-nowrap"
             >
               DOCS
             </Link>
@@ -75,6 +87,20 @@ export function Header() {
                 onClick={() => setMobileMenuOpen(false)}
               >
                 DISCOVER APIS
+              </Link>
+              <Link
+                href="/discover/servers"
+                className="font-mono text-sm font-medium hover:underline tracking-wide"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                SERVERS
+              </Link>
+              <Link
+                href="/ecosystem"
+                className="font-mono text-sm font-medium hover:underline tracking-wide"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                ECOSYSTEM
               </Link>
               <Link
                 href="/dashboard"

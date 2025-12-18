@@ -2,42 +2,35 @@
 'use client';
 
 import { Header } from '@/components/ui/header';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-
-// Mock service data - in production this would come from API
-const mockService = {
-  id: '1',
-  name: 'Weather Data API',
-  status: 'active',
-  upstreamUrl: 'https://api.weather.com/v1',
-  proxyUrl: 'https://x402.yourdomain.com/svc/weather',
-  endpoints: [
-    { path: '/current', method: 'GET', price: '0.05', calls: 15420, revenue: 771.00 },
-    { path: '/forecast', method: 'GET', price: '0.10', calls: 8920, revenue: 892.00 },
-    { path: '/historical', method: 'GET', price: '0.15', calls: 4680, revenue: 702.00 }
-  ],
-  totalCalls: 15420,
-  totalRevenue: 771.00,
-  discoverable: true,
-  createdAt: '2024-01-15',
-  lastUpdated: '2024-01-20',
-  network: 'base',
-  currency: 'USDC',
-  healthStatus: 'healthy',
-  responseTime: '45ms',
-  uptime: '99.8%'
-};
+import { ArrowLeftIcon } from 'lucide-react';
+import { DEFAULT_MOCK_SERVICE, fetchServiceById, type MockService } from '@/lib/mock-services';
 
 export default function ServiceManagementPage() {
   const params = useParams();
   const router = useRouter();
   const serviceId = params.id as string;
   const [activeTab, setActiveTab] = useState('overview');
+  const [service, setService] = useState<MockService | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // In production, fetch service data based on serviceId
-  const service = mockService;
+  // Fetch service data on mount
+  useEffect(() => {
+    const loadService = async () => {
+      setIsLoading(true);
+      try {
+        const serviceData = await fetchServiceById(serviceId);
+        setService(serviceData);
+      } catch (error) {
+        console.error('Error loading service:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadService();
+  }, [serviceId]);
 
   if (!service) {
     return (
@@ -64,8 +57,8 @@ export default function ServiceManagementPage() {
           {/* Page Header */}
           <div className="mb-8">
             <nav className="mb-6">
-              <Link href="/dashboard" className="text-blue-600 hover:underline font-mono">
-                ← BACK TO DASHBOARD
+              <Link href="/dashboard" className="text-blue-600 hover:underline font-mono text-nowrap">
+                <ArrowLeftIcon className="w-4 h-4" /> BACK TO DASHBOARD
               </Link>
             </nav>
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
@@ -112,7 +105,7 @@ export default function ServiceManagementPage() {
             
             <div className="retro-card text-center">
               <div className="text-3xl font-bold font-mono mb-2">
-                {service.totalCalls.toLocaleString()}
+                {service.totalCalls?.toLocaleString()}
               </div>
               <div className="text-sm font-mono text-gray-600 uppercase tracking-wide">
                 TOTAL CALLS
@@ -121,7 +114,7 @@ export default function ServiceManagementPage() {
             
             <div className="retro-card text-center">
               <div className="text-3xl font-bold font-mono mb-2">
-                ${service.totalRevenue.toLocaleString()}
+                ${service?.totalRevenue?.toLocaleString()}
               </div>
               <div className="text-sm font-mono text-gray-600 uppercase tracking-wide">
                 TOTAL REVENUE
@@ -208,7 +201,7 @@ export default function ServiceManagementPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="text-center">
                     <div className="text-2xl font-bold font-mono text-green-600 mb-2">
-                      {service.healthStatus.toUpperCase()}
+                      {service?.healthStatus?.toUpperCase()}
                     </div>
                     <div className="text-sm font-mono text-gray-600 uppercase tracking-wide">
                       HEALTH STATUS
@@ -259,13 +252,13 @@ export default function ServiceManagementPage() {
                         </div>
                         <div>
                           <div className="font-mono font-bold text-sm mb-1">CALLS</div>
-                          <div className="font-mono text-sm">{endpoint.calls.toLocaleString()}</div>
+                          <div className="font-mono text-sm">{endpoint?.calls?.toLocaleString()}</div>
                         </div>
                       </div>
                       <div className="flex justify-between items-center">
                         <div>
                           <div className="font-mono font-bold text-sm mb-1">REVENUE</div>
-                          <div className="font-mono text-sm">${endpoint.revenue.toFixed(2)}</div>
+                          <div className="font-mono text-sm">${endpoint?.revenue?.toFixed(2)}</div>
                         </div>
                         <div className="flex gap-2">
                           <button className="retro-button bg-gray-100 text-sm px-3 py-1">

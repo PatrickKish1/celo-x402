@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
       backendUrl.searchParams.append(key, value);
     });
 
-    console.log(`Proxying discovery request to backend: ${backendUrl.toString()}`);
+    // console.log(`Proxying discovery request to backend: ${backendUrl.toString()}`);
 
     // Make request to backend API (backend handles rate limiting and caching)
     const response = await fetch(backendUrl.toString(), {
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
 
     const data = await response.json();
     
-    console.log(`Successfully proxied ${data.items?.length || 0} services`);
+    // console.log(`Successfully proxied ${data.items?.length || 0} services`);
 
     // Return the data with proper CORS headers
     return NextResponse.json(data, {

@@ -7,14 +7,14 @@ export const BACKEND_CONFIG = {
   // Backend base URL
   baseUrl: process.env.NEXT_PUBLIC_BACKEND_URL || 
            (process.env.NODE_ENV === 'production' 
-             ? 'https://backend.x402.io' 
+             ? 'https://x402-manager-backend.vercel.app' 
              : 'http://localhost:3001'),
   
   // Gateway URL (for proxying API requests with payment)
   gatewayUrl: process.env.NEXT_PUBLIC_GATEWAY_URL || 
               (process.env.NODE_ENV === 'production' 
-                ? 'https://gateway.x402.io' 
-                : 'http://localhost:3001/api/gateway'),
+                ? 'https://x402-manager-backend.vercel.app' 
+                : 'https://x402-manager-backend.vercel.app/api/gateway'),
   
   // API endpoints
   endpoints: {

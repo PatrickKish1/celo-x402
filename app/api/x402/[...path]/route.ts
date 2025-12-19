@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { x402PaymentProcessor } from '@/lib/x402-payment-processor';
 
 // Backend API URL for analytics tracking
-const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:3001';
+const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
 
 export async function GET(
   request: NextRequest,

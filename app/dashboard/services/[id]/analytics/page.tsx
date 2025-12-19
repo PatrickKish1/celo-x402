@@ -52,7 +52,7 @@ export default function ServiceAnalyticsPage() {
         setLoading(true);
         setError(null);
         
-        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:3001';
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
         const response = await fetch(
           `${backendUrl}/api/analytics/${encodeURIComponent(serviceId)}?timeRange=${timeRange}`
         );

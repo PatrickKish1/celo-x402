@@ -2,12 +2,12 @@
 'use client';
 
 import { Header } from '@/components/ui/header';
-import { Footer } from '@/components/ui/footer';
 import { useState, useEffect } from 'react';
 import { x402Service } from '@/lib/x402-service';
 import { groupServicesByServer, X402Server } from '@/lib/x402-server-grouping';
 import Link from 'next/link';
 import { SmartImage } from '@/components/ui/smart-image';
+import { TransactionsTable } from '@/components/transactions-table';
 
 const SERVERS_PER_PAGE = 12;
 
@@ -17,6 +17,7 @@ export default function ServersPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [viewMode, setViewMode] = useState<'servers' | 'transactions'>('servers');
 
   useEffect(() => {
     loadServers();
@@ -64,14 +65,27 @@ export default function ServersPage() {
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-4xl font-bold font-mono tracking-wide">
-              X402 SERVERS
+              {viewMode === 'servers' ? 'X402 SERVERS' : 'X402 TRANSACTIONS'}
             </h1>
-            <Link href="/discover" className="retro-button px-4 py-2">
-              VIEW RESOURCES
-            </Link>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setViewMode(viewMode === 'servers' ? 'transactions' : 'servers')}
+                className="retro-button px-4 py-2"
+              >
+                {viewMode === 'servers' ? 'SHOW TRANSACTIONS' : 'SHOW SERVERS'}
+              </button>
+              {viewMode === 'servers' && (
+                <Link href="/discover" className="retro-button px-4 py-2">
+                  VIEW RESOURCES
+                </Link>
+              )}
+            </div>
           </div>
           <p className="text-gray-700 font-mono">
-            Browse x402 APIs grouped by server/origin
+            {viewMode === 'servers' 
+              ? 'Browse x402 APIs grouped by server/origin'
+              : 'View all x402 transactions through the Coinbase facilitator'
+            }
           </p>
         </div>
 
@@ -88,13 +102,17 @@ export default function ServersPage() {
 
         {loading ? (
           <div className="text-center py-12">
-            <p className="text-gray-600 font-mono">Loading servers...</p>
+            <p className="text-gray-600 font-mono">Loading {viewMode}...</p>
           </div>
-        ) : error ? (
+        ) : error && viewMode === 'servers' ? (
           <div className="retro-card p-4 bg-yellow-100 border-yellow-500">
             <p className="text-yellow-800 font-mono">{error}</p>
           </div>
+        ) : viewMode === 'transactions' ? (
+          /* Transactions View */
+          <TransactionsTable pageSize={15} />
         ) : (
+          /* Servers View */
           <>
             <div className="mb-4">
               <p className="font-mono text-sm text-gray-600">
@@ -182,7 +200,6 @@ export default function ServersPage() {
         )}
       </main>
 
-      <Footer />
     </div>
   );
 }

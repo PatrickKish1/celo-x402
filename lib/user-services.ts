@@ -24,6 +24,13 @@ export interface UserService {
     currency: string;
     network: string;
   };
+  tokenConfig?: {
+    address: string;
+    decimals: number;
+    name: string;
+    version: string;
+    symbol: string;
+  };
 }
 
 const USER_SERVICES_KEY = 'x402_user_services';

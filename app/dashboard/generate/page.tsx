@@ -3,7 +3,6 @@
 'use client';
 
 import { Header } from '@/components/ui/header';
-import { Footer } from '@/components/ui/footer';
 import { useState } from 'react';
 import { useAppKitAccount } from '@reown/appkit/react';
 import { generateMiddleware, type Language, type MiddlewareType } from '@/lib/middleware-templates';
@@ -376,8 +375,6 @@ export default function GenerateMiddlewarePage() {
           </div>
         </div>
       </main>
-
-      <Footer />
     </div>
   );
 }

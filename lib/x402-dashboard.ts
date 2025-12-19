@@ -16,6 +16,7 @@ export interface DashboardStats {
 export interface ServiceData {
   id: string;
   name: string;
+  resource?: string; // API resource URL
   status: 'active' | 'inactive' | 'pending';
   upstreamUrl: string;
   proxyUrl: string;
@@ -118,6 +119,7 @@ export class X402DashboardService {
         return userServices.map(service => ({
           id: service.id,
           name: service.name,
+          resource: service.resource,
           status: service.status as 'active' | 'inactive' | 'pending',
           upstreamUrl: service.upstreamUrl || service.resource,
           proxyUrl: service.proxyUrl || `/api/x402/${service.resource}`,
@@ -140,6 +142,7 @@ export class X402DashboardService {
         return {
           id: `service-${index}`,
           name: service.metadata?.title || service.resource.split('/').pop() || 'Unnamed Service',
+          resource: service.resource,
           status: 'active' as 'active' | 'inactive' | 'pending',
           upstreamUrl: service.resource,
           proxyUrl: `/api/x402/${service.resource}`,

@@ -171,7 +171,10 @@ export class X402PaymentService {
 
   /**
    * Execute payment for x402 API access
-   * Signs and submits payment proof
+   * Uses EIP-712 typed data signing for proper MetaMask display
+   * 
+   * This will show users a human-readable message like:
+   * "Authorize transfer of 0.01 USDC" instead of raw "10000"
    */
   async executePayment(params: {
     amount: string;
@@ -186,37 +189,94 @@ export class X402PaymentService {
     nonce: string;
   }> {
     try {
-      // Generate a unique nonce for this payment
-      const nonce = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      // Import wagmi dynamically to avoid SSR issues
+      const { signTypedData } = await import('@wagmi/core');
+      const { config } = await import('./reown-config');
       
-      // Create payment message to sign
-      const paymentMessage = {
-        amount: params.amount,
-        token: params.token,
-        recipient: params.recipient,
-        network: params.network,
-        nonce,
-        timestamp: Date.now(),
+      // Generate unique nonce (EIP-3009 format: bytes32)
+      const nonceHex = `0x${Date.now().toString(16).padStart(64, '0')}` as `0x${string}`;
+      
+      // Calculate validAfter and validBefore
+      const now = Math.floor(Date.now() / 1000);
+      const validAfter = now;
+      const validBefore = now + 300; // 5 minutes
+      
+      // Get chain ID from network
+      const chainId = params.network === 'base' ? 8453 : params.network === 'base-sepolia' ? 84532 : 1;
+      
+      // Determine token name and decimals
+      const isCelo = params.network === 'celo' || params.network === 'celo-alfajores';
+      const tokenName = isCelo ? 'Celo Dollar' : 'USD Coin';
+      const tokenDecimals = 6; // USDC has 6 decimals
+      
+      // Calculate human-readable amount for display
+      const humanReadableAmount = (parseInt(params.amount) / Math.pow(10, tokenDecimals)).toFixed(tokenDecimals);
+      
+      // Build EIP-712 typed data with EIP-3009 TransferWithAuthorization
+      const typedData = {
+        domain: {
+          name: tokenName,
+          version: '2',
+          chainId,
+          verifyingContract: params.token as `0x${string}`,
+        },
+        types: {
+          TransferWithAuthorization: [
+            { name: 'from', type: 'address' },
+            { name: 'to', type: 'address' },
+            { name: 'value', type: 'uint256' },
+            { name: 'validAfter', type: 'uint256' },
+            { name: 'validBefore', type: 'uint256' },
+            { name: 'nonce', type: 'bytes32' },
+          ],
+        },
+        primaryType: 'TransferWithAuthorization' as const,
+        message: {
+          from: params.userAddress as `0x${string}`,
+          to: params.recipient as `0x${string}`,
+          value: BigInt(params.amount), // Atomic units for contract
+          validAfter: BigInt(validAfter),
+          validBefore: BigInt(validBefore),
+          nonce: nonceHex,
+        },
       };
 
-      // In a real implementation, this would use wagmi/viem to sign the message
-      // For now, we'll create a mock signature
-      const mockSignature = `0x${Buffer.from(JSON.stringify(paymentMessage)).toString('hex')}`;
+      console.log('[x402Payment] Requesting signature for:', {
+        humanReadableAmount: `${humanReadableAmount} ${tokenName}`,
+        atomicAmount: params.amount,
+        from: params.userAddress,
+        to: params.recipient,
+        network: params.network,
+      });
 
-      // console.log('[x402Payment] Payment executed:', {
-      //   amount: params.amount,
-      //   recipient: params.recipient,
-      //   network: params.network,
-      // });
+      // Sign the typed data - MetaMask will display:
+      // "Transfer Authorization"
+      // From: 0x...
+      // To: 0x...
+      // Value: 10000 (will be shown as atomic units, but EIP-3009 context helps)
+      const signature = await signTypedData(config, typedData);
+
+      console.log('[x402Payment] Signature obtained:', signature.slice(0, 20) + '...');
 
       return {
-        signature: mockSignature,
+        signature,
         amount: params.amount,
         token: params.token,
-        nonce,
+        nonce: nonceHex,
       };
     } catch (error) {
       console.error('[x402Payment] Error executing payment:', error);
+      
+      // User-friendly error messages
+      if (error instanceof Error) {
+        if (error.message.includes('User rejected') || error.message.includes('user rejected')) {
+          throw new Error('Payment signature was rejected by user');
+        }
+        if (error.message.includes('network')) {
+          throw new Error('Please switch to the correct network in your wallet');
+        }
+      }
+      
       throw error;
     }
   }

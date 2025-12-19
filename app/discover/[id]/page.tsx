@@ -1,12 +1,13 @@
 'use client';
 
 import { Header } from '@/components/ui/header';
-import { Footer } from '@/components/ui/footer';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { X402Service, x402Service } from '@/lib/x402-service';
 import { DocumentationModal } from '@/components/documentation-modal';
 import { IntegrationModal } from '@/components/integration-modal';
+import { TransactionsTable } from '@/components/transactions-table';
+import { Transaction3DMap } from '@/components/transaction-map-3d';
 import Link from 'next/link';
 import { ArrowLeftIcon } from 'lucide-react';
 
@@ -20,6 +21,7 @@ export default function ServiceDetailsPage() {
   const [error, setError] = useState<string | null>(null);
   const [showDocumentation, setShowDocumentation] = useState(false);
   const [showIntegration, setShowIntegration] = useState(false);
+  const [transactionCount, setTransactionCount] = useState<number>(0);
 
   useEffect(() => {
     async function fetchServiceDetails() {
@@ -28,6 +30,17 @@ export default function ServiceDetailsPage() {
         const serviceData = await x402Service.getServiceDetails(serviceId);
         if (serviceData) {
           setService(serviceData);
+          
+          // Fetch transaction count for this service
+          const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+          const countResponse = await fetch(
+            `${backendUrl}/api/transactions/count?resource=${encodeURIComponent(serviceData.resource)}`
+          );
+          
+          if (countResponse.ok) {
+            const countData = await countResponse.json();
+            setTransactionCount(countData.count || 0);
+          }
         } else {
           setError('Service not found');
         }
@@ -55,7 +68,6 @@ export default function ServiceDetailsPage() {
             <p className="text-gray-600 font-mono">Fetching live data from x402 Bazaar...</p>
           </div>
         </main>
-        <Footer />
       </div>
     );
   }
@@ -74,7 +86,6 @@ export default function ServiceDetailsPage() {
             </Link>
           </div>
         </main>
-        <Footer />
       </div>
     );
   }
@@ -132,7 +143,7 @@ export default function ServiceDetailsPage() {
             </div>
 
             {/* Service Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-sm border-t-2 border-black pt-6">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-6 text-sm border-t-2 border-black pt-6">
               <div>
                 <div className="font-mono font-bold">RESOURCE TYPE</div>
                 <div className="text-gray-600">{service.type.toUpperCase()}</div>
@@ -144,6 +155,12 @@ export default function ServiceDetailsPage() {
               <div>
                 <div className="font-mono font-bold">NETWORK</div>
                 <div className="text-gray-600">{primaryPayment.network.toUpperCase()}</div>
+              </div>
+              <div>
+                <div className="font-mono font-bold">TRANSACTIONS</div>
+                <div className="font-bold text-purple-600">
+                  {loading ? '...' : transactionCount.toLocaleString()}
+                </div>
               </div>
               <div>
                 <div className="font-mono font-bold">LAST UPDATED</div>
@@ -264,6 +281,38 @@ export default function ServiceDetailsPage() {
             </>
           )}
 
+          {/* 3D Transaction Map */}
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold font-mono tracking-wide">
+                TRANSACTION NETWORK VISUALIZATION
+              </h2>
+              <span className="text-sm font-mono text-gray-600">
+                Live 3D Map
+              </span>
+            </div>
+            <Transaction3DMap 
+              resourceName={service?.metadata?.name || 'X402 Service'} 
+              transactionCount={transactionCount || 50} 
+            />
+            <p className="text-xs font-mono text-gray-600 mt-2 text-center">
+              Interactive 3D visualization of transaction flows • Purple sphere = API service • Cyan nodes = Clients • Green particles = Transactions
+            </p>
+          </div>
+
+          {/* Transactions Section */}
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold font-mono tracking-wide">
+                TRANSACTION HISTORY
+              </h2>
+              <span className="text-sm font-mono text-gray-600">
+                Last 30 days
+              </span>
+            </div>
+            <TransactionsTable resourceFilter={service?.resource} pageSize={10} />
+          </div>
+
           {/* Metadata */}
           {service?.metadata && typeof service.metadata === 'object' && Object.keys(service.metadata).length > 0 && (
             <div className="retro-card">
@@ -276,9 +325,7 @@ export default function ServiceDetailsPage() {
             </div>
           )}
         </div>
-      </main>
-      
-      <Footer />
+      </main>      
     </div>
   );
 }

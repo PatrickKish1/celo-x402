@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useAppKitAccount } from '@reown/appkit/react';
 import { x402Dashboard, type DashboardStats, type ServiceData, type ActivityItem } from '@/lib/x402-dashboard';
+import { TransactionsTable } from '@/components/transactions-table';
 
 export default function DashboardPage() {
   const { address, isConnected } = useAppKitAccount();
@@ -21,6 +22,11 @@ export default function DashboardPage() {
   const [services, setServices] = useState<ServiceData[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [transactionStats, setTransactionStats] = useState({
+    totalTransactions: 0,
+    totalVolume: '0',
+    uniqueClients: 0,
+  });
 
   const loadDashboardData = useCallback(async () => {
     try {
@@ -35,6 +41,27 @@ export default function DashboardPage() {
       setStats(statsData);
       setServices(servicesData);
       setActivity(activityData);
+
+      // Fetch transaction stats if user is connected
+      if (userAddress) {
+        try {
+          const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+          const statsResponse = await fetch(
+            `${backendUrl}/api/transactions/stats?userAddress=${userAddress}`
+          );
+          
+          if (statsResponse.ok) {
+            const txStats = await statsResponse.json();
+            setTransactionStats({
+              totalTransactions: txStats.totalTransactions || 0,
+              totalVolume: txStats.totalVolume || '0',
+              uniqueClients: txStats.uniqueClients || 0,
+            });
+          }
+        } catch (err) {
+          console.error('Error fetching transaction stats:', err);
+        }
+      }
     } catch (error) {
       console.error('Error loading dashboard:', error);
     } finally {
@@ -132,10 +159,11 @@ export default function DashboardPage() {
 
           {/* Navigation Tabs */}
           <div className="border-b-2 border-black mb-8">
-            <nav className="flex space-x-8">
+            <nav className="flex flex-wrap space-x-8">
               {[
                 { id: 'overview', label: 'OVERVIEW' },
                 { id: 'services', label: 'SERVICES' },
+                { id: 'transactions', label: 'TRANSACTIONS' },
                 { id: 'analytics', label: 'ANALYTICS' },
                 { id: 'settings', label: 'SETTINGS' }
               ].map(tab => (
@@ -305,6 +333,80 @@ export default function DashboardPage() {
                 </div>
               ))}
                 </>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'transactions' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-2xl font-bold font-mono tracking-wide mb-2">
+                    TRANSACTION HISTORY
+                  </h2>
+                  <p className="text-sm font-mono text-gray-600">
+                    {isConnected && address 
+                      ? 'All transactions for your x402 APIs' 
+                      : 'View all x402 transactions on the platform'}
+                  </p>
+                </div>
+              </div>
+
+              {/* User Services Transactions (if connected) */}
+              {isConnected && address && services.length > 0 && (
+                <div className="retro-card mb-6">
+                  <h3 className="text-lg font-bold font-mono mb-3 tracking-wide">
+                    YOUR APIS TRANSACTIONS
+                  </h3>
+                  <p className="text-sm font-mono text-gray-600 mb-4">
+                    Transactions for services you own
+                  </p>
+                  <TransactionsTable 
+                    resourceFilter={services[0]?.resource} 
+                    pageSize={10} 
+                  />
+                </div>
+              )}
+
+              {/* All Platform Transactions */}
+              <div className="retro-card">
+                <h3 className="text-lg font-bold font-mono mb-3 tracking-wide">
+                  {isConnected && address ? 'ALL PLATFORM TRANSACTIONS' : 'PLATFORM TRANSACTIONS'}
+                </h3>
+                <p className="text-sm font-mono text-gray-600 mb-4">
+                  Recent x402 transactions through the Coinbase facilitator
+                </p>
+                <TransactionsTable pageSize={15} />
+              </div>
+
+              {/* Transaction Stats */}
+              {isConnected && address && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="retro-card text-center">
+                    <div className="text-3xl font-bold font-mono mb-2 text-purple-600">
+                      {loading ? '...' : transactionStats.totalTransactions.toLocaleString()}
+                    </div>
+                    <div className="text-sm font-mono text-gray-600 uppercase tracking-wide">
+                      Total Transactions
+                    </div>
+                  </div>
+                  <div className="retro-card text-center">
+                    <div className="text-3xl font-bold font-mono mb-2 text-green-600">
+                      ${loading ? '...' : parseFloat(transactionStats.totalVolume).toFixed(2)} USDC
+                    </div>
+                    <div className="text-sm font-mono text-gray-600 uppercase tracking-wide">
+                      Total Volume
+                    </div>
+                  </div>
+                  <div className="retro-card text-center">
+                    <div className="text-3xl font-bold font-mono mb-2 text-blue-600">
+                      {loading ? '...' : transactionStats.uniqueClients}
+                    </div>
+                    <div className="text-sm font-mono text-gray-600 uppercase tracking-wide">
+                      Active Clients
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           )}

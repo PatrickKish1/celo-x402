@@ -44,7 +44,15 @@ export default function CreateApiPage() {
   const [pricing, setPricing] = useState({
     basePrice: '0.05',
     currency: 'USDC',
-    network: 'base'
+    network: 'base',
+    useCustomToken: false,
+    customToken: {
+      address: '',
+      decimals: 6,
+      name: '',
+      version: '2',
+      symbol: ''
+    }
   });
   const [isCreating, setIsCreating] = useState(false);
   const [apiLanguage, setApiLanguage] = useState<Language>('node');
@@ -68,8 +76,23 @@ export default function CreateApiPage() {
         }
       });
       
+      const contentType = response.headers.get('content-type') || '';
       const responseText = await response.text();
-      setHealthResponse(`Status: ${response.status} ${response.statusText}\nResponse: ${responseText}`);
+      
+      // Check if response is JSON
+      let formattedResponse = responseText;
+      if (contentType.includes('application/json')) {
+        try {
+          const jsonData = JSON.parse(responseText);
+          formattedResponse = JSON.stringify(jsonData, null, 2);
+        } catch (e) {
+          // If JSON parse fails, use original text
+        }
+      } else if (contentType.includes('text/html')) {
+        formattedResponse = '[HTML Response - Not JSON]\n\n' + responseText.substring(0, 500) + (responseText.length > 500 ? '...\n\n(Truncated - HTML responses not supported)' : '');
+      }
+      
+      setHealthResponse(`Status: ${response.status} ${response.statusText}\nContent-Type: ${contentType}\n\nResponse:\n${formattedResponse}`);
       setHealthStatus(response.ok ? 'success' : 'error');
     } catch (error) {
       setHealthResponse(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -213,6 +236,25 @@ export default function CreateApiPage() {
       // Generate proxy URL (for proxy mode)
       const proxyUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/api/x402/proxy/${apiName.toLowerCase().replace(/\s+/g, '-')}`;
 
+      // Validate custom token if enabled
+      if (pricing.useCustomToken) {
+        if (!pricing.customToken.address.trim()) {
+          setAlertMessage({ type: 'error', message: 'Please provide a token contract address' });
+          setIsCreating(false);
+          return;
+        }
+        if (!pricing.customToken.symbol.trim()) {
+          setAlertMessage({ type: 'error', message: 'Please provide a token symbol' });
+          setIsCreating(false);
+          return;
+        }
+        if (!pricing.customToken.name.trim()) {
+          setAlertMessage({ type: 'error', message: 'Please provide a token name' });
+          setIsCreating(false);
+          return;
+        }
+      }
+
       // Save to user services
       const service = userServiceManager.addUserService({
         resource: resourceUrl,
@@ -227,9 +269,16 @@ export default function CreateApiPage() {
         discoverable: true,
         pricing: {
           amount: pricing.basePrice,
-          currency: pricing.currency,
+          currency: pricing.customToken.symbol || pricing.currency,
           network: pricing.network,
         },
+        tokenConfig: pricing.useCustomToken ? {
+          address: pricing.customToken.address,
+          decimals: pricing.customToken.decimals,
+          name: pricing.customToken.name,
+          version: pricing.customToken.version,
+          symbol: pricing.customToken.symbol,
+        } : undefined,
       });
 
       setAlertMessage({ type: 'success', message: 'API created successfully! Redirecting...' });
@@ -417,8 +466,8 @@ export default function CreateApiPage() {
                 </div>
               </div>
               {healthResponse && (
-                <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded">
-                  <div className="font-mono text-sm whitespace-pre-wrap">{healthResponse}</div>
+                <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded max-h-[400px] overflow-y-auto">
+                  <div className="font-mono text-sm whitespace-pre-wrap break-words">{healthResponse}</div>
                 </div>
               )}
             </div>
@@ -823,6 +872,121 @@ export default function CreateApiPage() {
                     </optgroup>
                   </select>
                 </div>
+              </div>
+              
+              {/* Custom Token Configuration */}
+              <div className="mt-6 p-4 border-2 border-dashed border-gray-300 rounded">
+                <div className="flex items-center gap-3 mb-4">
+                  <input
+                    type="checkbox"
+                    id="useCustomToken"
+                    checked={pricing.useCustomToken}
+                    onChange={(e) => setPricing({...pricing, useCustomToken: e.target.checked})}
+                    className="w-4 h-4"
+                  />
+                  <label htmlFor="useCustomToken" className="font-mono font-bold text-sm cursor-pointer">
+                    USE CUSTOM ERC-20 TOKEN
+                    <span className="text-xs text-gray-500 ml-2 font-normal">(Advanced)</span>
+                  </label>
+                </div>
+                
+                {pricing.useCustomToken && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    <div>
+                      <label className="block font-mono font-bold text-sm mb-2">
+                        TOKEN CONTRACT ADDRESS <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={pricing.customToken.address}
+                        onChange={(e) => setPricing({
+                          ...pricing,
+                          customToken: {...pricing.customToken, address: e.target.value}
+                        })}
+                        placeholder="0x..."
+                        className="retro-input w-full font-mono text-sm"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">ERC-20 token contract address on selected network</p>
+                    </div>
+                    
+                    <div>
+                      <label className="block font-mono font-bold text-sm mb-2">
+                        TOKEN SYMBOL <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={pricing.customToken.symbol}
+                        onChange={(e) => setPricing({
+                          ...pricing,
+                          customToken: {...pricing.customToken, symbol: e.target.value}
+                        })}
+                        placeholder="e.g., WETH, DAI"
+                        className="retro-input w-full"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Token symbol for display</p>
+                    </div>
+                    
+                    <div>
+                      <label className="block font-mono font-bold text-sm mb-2">
+                        TOKEN NAME <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={pricing.customToken.name}
+                        onChange={(e) => setPricing({
+                          ...pricing,
+                          customToken: {...pricing.customToken, name: e.target.value}
+                        })}
+                        placeholder="e.g., Wrapped Ether, Dai Stablecoin"
+                        className="retro-input w-full"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Full token name (for EIP-712 signing)</p>
+                    </div>
+                    
+                    <div>
+                      <label className="block font-mono font-bold text-sm mb-2">
+                        DECIMALS <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="18"
+                        value={pricing.customToken.decimals}
+                        onChange={(e) => setPricing({
+                          ...pricing,
+                          customToken: {...pricing.customToken, decimals: parseInt(e.target.value) || 0}
+                        })}
+                        className="retro-input w-full"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Token decimals (USDC=6, WETH=18)</p>
+                    </div>
+                    
+                    <div>
+                      <label className="block font-mono font-bold text-sm mb-2">
+                        EIP-712 VERSION
+                      </label>
+                      <input
+                        type="text"
+                        value={pricing.customToken.version}
+                        onChange={(e) => setPricing({
+                          ...pricing,
+                          customToken: {...pricing.customToken, version: e.target.value}
+                        })}
+                        placeholder="2"
+                        className="retro-input w-full"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">{`EIP-712 domain version (default: "2")`}</p>
+                    </div>
+                    
+                    <div className="col-span-2">
+                      <div className="bg-yellow-50 border-2 border-yellow-300 p-3 rounded">
+                        <p className="text-sm font-mono text-yellow-800">
+                          <strong>Important:</strong> Ensure the token contract is deployed on the selected network and supports EIP-3009 (TransferWithAuthorization) or has a standard ERC-20 transfer function.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

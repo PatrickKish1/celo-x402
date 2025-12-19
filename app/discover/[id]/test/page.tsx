@@ -3,7 +3,6 @@
 'use client';
 
 import { Header } from '@/components/ui/header';
-import { Footer } from '@/components/ui/footer';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { X402Service, x402Service } from '@/lib/x402-service';
@@ -112,9 +111,45 @@ export default function ApiTestPage() {
             });
           }
           
+          // Smart method detection if schema doesn't specify
+          let detectedMethod = schema?.method || 'GET';
+          if (!schema?.method) {
+            // Check URL patterns that typically indicate POST/PUT/DELETE
+            const resourceUrl = (primaryPayment?.resource || '').toLowerCase();
+            const description = (primaryPayment?.description || serviceData?.metadata?.description || '').toLowerCase();
+            
+            if (
+              resourceUrl.includes('/create') || 
+              resourceUrl.includes('/submit') || 
+              resourceUrl.includes('/add') ||
+              resourceUrl.includes('/register') ||
+              resourceUrl.includes('/post') ||
+              description.includes('create') ||
+              description.includes('submit') ||
+              description.includes('post data')
+            ) {
+              detectedMethod = 'POST';
+            } else if (
+              resourceUrl.includes('/update') || 
+              resourceUrl.includes('/edit') ||
+              resourceUrl.includes('/modify') ||
+              description.includes('update') ||
+              description.includes('modify')
+            ) {
+              detectedMethod = 'PUT';
+            } else if (
+              resourceUrl.includes('/delete') || 
+              resourceUrl.includes('/remove') ||
+              description.includes('delete') ||
+              description.includes('remove')
+            ) {
+              detectedMethod = 'DELETE';
+            }
+          }
+          
           setTestRequest(prev => ({
             ...prev,
-            method: schema?.method || 'GET',
+            method: detectedMethod,
             url: primaryPayment?.resource || '',
             headers: defaultHeaders,
             body: Object.keys(defaultBody).length > 0 ? JSON.stringify(defaultBody, null, 2) : '',
@@ -790,7 +825,6 @@ export default function ApiTestPage() {
             <p className="text-gray-600 font-mono">Preparing testing interface...</p>
           </div>
         </main>
-        <Footer />
       </div>
     );
   }
@@ -809,7 +843,6 @@ export default function ApiTestPage() {
             </Link>
           </div>
         </main>
-        <Footer />
       </div>
     );
   }
@@ -1013,19 +1046,44 @@ export default function ApiTestPage() {
                   </div>
                 )}
 
-                {/* Raw Request Body (Advanced) */}
+                {/* Request Body for POST/PUT/PATCH/DELETE */}
                 {testRequest.method !== 'GET' && (
                   <div className="mb-4">
-                    <label className="block font-mono font-bold text-sm mb-2">
-                      RAW REQUEST BODY (Advanced)
-                    </label>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="font-mono font-bold text-sm">
+                        REQUEST BODY (JSON) {testRequest.method === 'POST' && <span className="text-red-600">*</span>}
+                      </label>
+                      <button
+                        onClick={() => {
+                          const exampleBody = testRequest.method === 'POST' 
+                            ? '{\n  "example": "value",\n  "key": "data"\n}'
+                            : testRequest.method === 'PUT'
+                            ? '{\n  "id": "123",\n  "updatedField": "new value"\n}'
+                            : '{\n  "data": "value"\n}';
+                          setTestRequest(prev => ({ ...prev, body: exampleBody }));
+                        }}
+                        className="text-blue-600 hover:underline font-mono text-xs"
+                      >
+                        INSERT EXAMPLE
+                      </button>
+                    </div>
                     <textarea
                       value={testRequest.body}
                       onChange={(e) => setTestRequest(prev => ({ ...prev, body: e.target.value }))}
-                      placeholder="Enter JSON request body..."
-                      rows={6}
+                      placeholder={`Enter JSON request body for ${testRequest.method} request...\n\nExample:\n{\n  "field1": "value1",\n  "field2": "value2"\n}`}
+                      rows={8}
                       className="retro-input w-full text-xs font-mono"
                     />
+                    <p className="text-xs text-gray-600 mt-1 font-mono">
+                      {`Tip: ${testRequest.method} requests typically require a JSON body with the data to send`}
+                    </p>
+                    {!testRequest.body && testRequest.method === 'POST' && (
+                      <div className="mt-2 p-2 bg-yellow-50 border border-yellow-300 rounded">
+                        <p className="text-xs font-mono text-yellow-800">
+                          {`POST requests usually require a request body. Click "INSERT EXAMPLE" or enter your JSON data above.`}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1233,7 +1291,6 @@ export default function ApiTestPage() {
         </div>
       </main>
       
-      <Footer />
 
       {/* Cross-Chain Payment Modal */}
       {pendingPaymentRequirement && address && (

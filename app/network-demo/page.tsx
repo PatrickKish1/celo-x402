@@ -1,7 +1,6 @@
 'use client';
 
 import { Header } from '@/components/ui/header';
-import { Footer } from '@/components/ui/footer';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeftIcon } from 'lucide-react';
@@ -329,7 +328,6 @@ export default function NetworkDemoPage() {
         </div>
       </main>
       
-      <Footer />
     </div>
   );
 }

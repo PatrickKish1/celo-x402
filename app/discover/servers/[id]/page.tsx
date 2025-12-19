@@ -2,12 +2,12 @@
 'use client';
 
 import { Header } from '@/components/ui/header';
-import { Footer } from '@/components/ui/footer';
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { x402Service } from '@/lib/x402-service';
 import { groupServicesByServer, getServerById, X402Server } from '@/lib/x402-server-grouping';
 import { x402Service as serviceManager } from '@/lib/x402-service';
+import { generateServiceId } from '@/lib/x402-service-id';
 import Link from 'next/link';
 import { SmartImage } from '@/components/ui/smart-image';
 
@@ -42,7 +42,7 @@ export default function ServerDetailPage() {
     }
   }, [serverId]);
 
-  
+
   useEffect(() => {
     if (serverId) {
       loadServerDetails();
@@ -57,7 +57,6 @@ export default function ServerDetailPage() {
         <main className="container mx-auto px-4 py-12">
           <p className="text-center font-mono">Loading server details...</p>
         </main>
-        <Footer />
       </div>
     );
   }
@@ -74,7 +73,6 @@ export default function ServerDetailPage() {
             </Link>
           </div>
         </main>
-        <Footer />
       </div>
     );
   }
@@ -175,11 +173,12 @@ export default function ServerDetailPage() {
             const primaryPayment = resource?.accepts?.[0];
             const price = serviceManager.formatUSDCAmount(primaryPayment?.maxAmountRequired || '0');
             const tags = serviceManager.getServiceTags(resource);
+            const serviceId = generateServiceId(resource?.resource || '');
 
             return (
               <Link
                 key={resource?.resource || index}
-                href={`/discover/${encodeURIComponent(resource?.resource || '')}`}
+                href={`/discover/${serviceId}`}
                 className="retro-card p-4 hover:transform hover:-translate-y-1 transition-transform duration-200 block"
               >
                 <div className="flex items-start justify-between gap-4">
@@ -216,7 +215,6 @@ export default function ServerDetailPage() {
         </div>
       </main>
 
-      <Footer />
     </div>
   );
 }

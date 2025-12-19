@@ -2,7 +2,6 @@
 'use client';
 
 import { Header } from '@/components/ui/header';
-import { Footer } from '@/components/ui/footer';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -238,7 +237,6 @@ export default function EcosystemPage() {
         </div>
       </main>
 
-      <Footer />
     </div>
   );
 }

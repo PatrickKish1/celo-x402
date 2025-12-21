@@ -84,7 +84,7 @@ export default function ValidateServicePage() {
   }, [isConnected]);
 
   // Helper function to extract domain or subdomain from URL
-  const extractDomainOrSubdomain = (url: string): string => {
+  const extractDomainOrSubdomain = useCallback((url: string): string => {
     try {
       const urlObj = new URL(url);
       const hostname = urlObj.hostname;
@@ -104,10 +104,10 @@ export default function ValidateServicePage() {
     } catch {
       return "service";
     }
-  };
+  }, []);
 
   // Helper function to check if a string looks like an ID (CID, UUID, hash)
-  const looksLikeId = (str: string): boolean => {
+  const looksLikeId = useCallback((str: string): boolean => {
     if (!str) return false;
     // Check for CID (starts with baf, Qm, etc.), UUID, or long hex strings
     return (
@@ -117,10 +117,10 @@ export default function ValidateServicePage() {
       /^[0-9a-f]{32,}$/i.test(str) || // Long hex string
       /^0x[0-9a-f]{40,}$/i.test(str) // Ethereum address or hash
     );
-  };
+  }, []);
 
   // Get service display name (same logic as discover page)
-  const getServiceDisplayName = (service: X402Service): { name: string; subtitle?: string } => {
+  const getServiceDisplayName = useCallback((service: X402Service): { name: string; subtitle?: string } => {
     const rawName =
       service?.metadata?.name ||
       service?.resource?.split("/").pop() ||
@@ -138,7 +138,7 @@ export default function ValidateServicePage() {
       name: displayName,
       subtitle: displaySubtitle && displaySubtitle !== displayName ? displaySubtitle : undefined,
     };
-  };
+  }, [extractDomainOrSubdomain, looksLikeId]);
 
   // Check if service is testnet
   const isTestnetService = (service: X402Service): boolean => {
@@ -273,7 +273,7 @@ export default function ValidateServicePage() {
   const hasMore = filteredServices.length > paginatedServices.length;
 
   const loadMore = () => {
-    setCurrentPage(prev => prev + 1);
+    setCurrentPage((prev: number) => prev + 1);
   };
 
   const fetchUsageStats = useCallback(async () => {
@@ -478,7 +478,7 @@ export default function ValidateServicePage() {
               ) : (
                 <>
                   <div className="space-y-3">
-                    {paginatedServices.map((service) => {
+                    {paginatedServices.map((service: X402Service) => {
                       const id = generateServiceId(service.resource);
                       const { name, subtitle } = getServiceDisplayName(service);
                       const description = service.metadata?.description || service.accepts?.[0]?.description || '';
@@ -609,7 +609,7 @@ export default function ValidateServicePage() {
                   {/* Test Details */}
                   <div className="space-y-3">
                     <h3 className="font-bold font-mono text-lg mb-3">Test Details</h3>
-                    {validationResult.testResults.map((test, index) => (
+                    {validationResult.testResults.map((test: TestResult, index: number) => (
                       <div 
                         key={index}
                         className={`p-4 rounded-lg border-2 ${

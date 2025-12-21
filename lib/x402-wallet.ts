@@ -175,6 +175,91 @@ export class X402WalletService {
   }
 
   /**
+   * Wait for chain change to complete
+   */
+  private async waitForChainChange(targetChainId: number, timeoutMs: number = 10000): Promise<void> {
+    const ethereum = getEthereumProvider();
+    if (!ethereum) {
+      throw new Error('No Web3 wallet detected');
+    }
+
+    return new Promise((resolve, reject) => {
+      let isResolved = false;
+      const timeout = setTimeout(() => {
+        if (!isResolved) {
+          isResolved = true;
+          cleanup();
+          reject(new Error(`Timeout waiting for chain change to ${targetChainId}`));
+        }
+      }, timeoutMs);
+
+      const checkChain = async () => {
+        if (isResolved) return;
+        try {
+          const currentChainId = await ethereum.request({
+            method: 'eth_chainId',
+          }) as string;
+          const currentChainIdNum = parseInt(currentChainId, 16);
+          
+          if (currentChainIdNum === targetChainId) {
+            if (!isResolved) {
+              isResolved = true;
+              cleanup();
+              resolve();
+            }
+          }
+        } catch (error) {
+          if (!isResolved) {
+            isResolved = true;
+            cleanup();
+            reject(error);
+          }
+        }
+      };
+
+      // Listen for chain change event
+      const handleChainChanged = (chainId: string) => {
+        if (isResolved) return;
+        const chainIdNum = parseInt(chainId, 16);
+        if (chainIdNum === targetChainId) {
+          if (!isResolved) {
+            isResolved = true;
+            cleanup();
+            resolve();
+          }
+        }
+      };
+
+      let pollInterval: NodeJS.Timeout | null = null;
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        if (pollInterval) {
+          clearInterval(pollInterval);
+        }
+        if (ethereum.removeListener) {
+          ethereum.removeListener('chainChanged', handleChainChanged);
+        }
+      };
+
+      // Check immediately
+      checkChain();
+
+      // Also listen for chainChanged event
+      if (ethereum.on) {
+        ethereum.on('chainChanged', handleChainChanged);
+      }
+
+      // Poll every 500ms as fallback
+      pollInterval = setInterval(() => {
+        if (!isResolved) {
+          checkChain();
+        }
+      }, 500);
+    });
+  }
+
+  /**
    * Add network to wallet
    */
   private async addNetwork(network: string): Promise<void> {
@@ -220,6 +305,32 @@ export class X402WalletService {
       }
       if (!requirements.payTo) {
         throw new Error('Payment requirements missing payTo address');
+      }
+
+      // Ensure wallet is on correct network before signing
+      const requiredChainId = this.getChainIdFromNetwork(requirements.network);
+      let walletConfig = await this.getWalletConfig();
+      
+      if (walletConfig && walletConfig.chainId !== requiredChainId) {
+        console.log(`[X402Wallet] Switching from chain ${walletConfig.chainId} to ${requiredChainId} for network ${requirements.network}`);
+        
+        // Switch network and wait for the change to complete
+        const switchSuccess = await this.switchNetwork(requirements.network);
+        if (!switchSuccess) {
+          throw new Error(`Failed to switch to network ${requirements.network} (chainId: ${requiredChainId})`);
+        }
+        
+        // Wait for chain change event or poll for chain change
+        await this.waitForChainChange(requiredChainId, 10000); // 10 second timeout
+        
+        // Re-initialize wallet client after chain switch
+        await this.initializeFromWagmi(true, this.currentAddress);
+        
+        // Verify chain change
+        walletConfig = await this.getWalletConfig();
+        if (!walletConfig || walletConfig.chainId !== requiredChainId) {
+          throw new Error(`Wallet is still on chain ${walletConfig?.chainId}, expected ${requiredChainId}. Please switch networks manually.`);
+        }
       }
 
       // Generate nonce

@@ -217,12 +217,17 @@ export async function validateEndpointsBatch(
 
 /**
  * Check if response has meaningful data based on output schema
+ * Validates by checking keys (not values) against the schema
+ * Handles both full schema objects (with input/output) and direct output schemas
  */
 export function validateResponseAgainstSchema(
   responseData: any,
   outputSchema?: any
 ): ValidationResult {
-  if (!outputSchema || !outputSchema.output) {
+  // Handle case where outputSchema might be the full schema or just the output part
+  let schema: any = null;
+  
+  if (!outputSchema) {
     // No schema to validate against
     return {
       isValid: true,
@@ -231,33 +236,159 @@ export function validateResponseAgainstSchema(
     };
   }
 
-  const schema = outputSchema.output;
+  // Extract the output section if it exists
+  if (outputSchema.output) {
+    schema = outputSchema.output;
+  } else if (outputSchema.properties || outputSchema.type) {
+    // Schema is already the output part
+    schema = outputSchema;
+  } else {
+    // No valid schema structure
+    return {
+      isValid: true,
+      hasData: responseData != null,
+      dataType: typeof responseData === 'object' ? 'json' : 'text',
+    };
+  }
+
   const warnings: string[] = [];
 
-  // Check if response matches expected structure
+  // Check if response matches expected structure (checking keys, not values)
   if (typeof schema === 'object' && !Array.isArray(schema)) {
-    const requiredFields = Object.keys(schema.properties || {}).filter(
-      (key: string) => schema.required?.includes(key)
-    );
+    const schemaProperties = schema.properties || {};
+    const schemaKeys = Object.keys(schemaProperties);
+    const requiredFields = schema.required || [];
+    const schemaType = schema.type || 'object';
 
-    if (requiredFields.length > 0 && typeof responseData === 'object') {
-      const missingFields = requiredFields.filter(
-        (field: string) => !(field in responseData)
-      );
-
-      if (missingFields.length > 0) {
+    // Handle array responses
+    if (schemaType === 'array' || Array.isArray(schema.items)) {
+      if (!Array.isArray(responseData)) {
         return {
           isValid: false,
-          hasData: true,
+          hasData: false,
           dataType: 'json',
-          error: `Missing required fields from schema: ${missingFields.join(', ')}`,
-          warnings,
+          error: 'Response is not an array, but schema expects an array',
         };
       }
+      
+      // Validate first item in array against schema
+      if (responseData.length > 0 && schema.items) {
+        const itemSchema = schema.items;
+        const firstItem = responseData[0];
+        if (typeof firstItem === 'object' && itemSchema.properties) {
+          const itemProperties = Object.keys(itemSchema.properties);
+          const itemKeys = Object.keys(firstItem);
+          const missingKeys = itemProperties.filter(key => !itemKeys.includes(key));
+          
+          if (missingKeys.length > 0 && itemSchema.required) {
+            const missingRequired = missingKeys.filter(key => itemSchema.required.includes(key));
+            if (missingRequired.length > 0) {
+              return {
+                isValid: false,
+                hasData: true,
+                dataType: 'json',
+                error: `Array items missing required keys: ${missingRequired.join(', ')}`,
+                warnings,
+              };
+            }
+          }
+        }
+      }
+      
+      return {
+        isValid: responseData.length > 0,
+        hasData: responseData.length > 0,
+        dataType: 'json',
+        warnings: warnings.length > 0 ? warnings : undefined,
+      };
+    }
+
+    // Handle object responses
+    if (typeof responseData === 'object' && responseData !== null && !Array.isArray(responseData)) {
+      const responseKeys = Object.keys(responseData);
+      
+      // If schema has properties defined, validate against them
+      if (schemaKeys.length > 0) {
+        // Check for required fields first (these must exist)
+        if (requiredFields.length > 0) {
+          const missingRequired = requiredFields.filter(
+            (field: string) => !responseKeys.includes(field)
+          );
+
+          if (missingRequired.length > 0) {
+            return {
+              isValid: false,
+              hasData: true,
+              dataType: 'json',
+              error: `Missing required keys from output schema: ${missingRequired.join(', ')}`,
+              warnings,
+            };
+          }
+        }
+
+        // Check if response has all expected keys from output.properties
+        // This is important - we want to ensure the response matches the expected structure
+        const missingExpectedKeys = schemaKeys.filter(
+          (key: string) => !responseKeys.includes(key)
+        );
+
+        // If more than 30% of expected keys are missing, consider it invalid
+        // (allows for some flexibility but ensures core structure matches)
+        const missingPercentage = missingExpectedKeys.length / schemaKeys.length;
+        if (missingPercentage > 0.3 && schemaKeys.length > 0) {
+          return {
+            isValid: false,
+            hasData: true,
+            dataType: 'json',
+            error: `Response missing expected keys from output schema: ${missingExpectedKeys.slice(0, 5).join(', ')}${missingExpectedKeys.length > 5 ? '...' : ''}`,
+            warnings: [
+              `Expected ${schemaKeys.length} keys, found ${responseKeys.length}`,
+              ...warnings
+            ],
+          };
+        }
+
+        // Warn about missing optional keys (but don't fail)
+        if (missingExpectedKeys.length > 0) {
+          warnings.push(`Response missing optional keys: ${missingExpectedKeys.join(', ')}`);
+        }
+
+        // Check if response has unexpected keys (extra fields are OK, just warn)
+        const unexpectedKeys = responseKeys.filter(
+          (key: string) => !schemaKeys.includes(key)
+        );
+        if (unexpectedKeys.length > 0) {
+          warnings.push(`Response contains additional keys (not in schema): ${unexpectedKeys.join(', ')}`);
+        }
+
+        // Success: response has all required keys and most expected keys
+        return {
+          isValid: true,
+          hasData: true,
+          dataType: 'json',
+          warnings: warnings.length > 0 ? warnings : undefined,
+        };
+      } else {
+        // Schema has no properties defined, just check that response is an object with data
+        const hasData = responseKeys.length > 0;
+        return {
+          isValid: hasData,
+          hasData,
+          dataType: 'json',
+          error: hasData ? undefined : 'Response object is empty',
+        };
+      }
+    } else {
+      return {
+        isValid: false,
+        hasData: false,
+        dataType: 'json',
+        error: 'Response is not an object, but schema expects an object',
+      };
     }
   }
 
-  // Check for empty/null values in critical fields
+  // Check for empty/null values
   if (typeof responseData === 'object' && responseData !== null) {
     const hasData = Object.keys(responseData).length > 0;
     if (!hasData) {

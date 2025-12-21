@@ -68,12 +68,12 @@ export default function ServersPage() {
               {viewMode === 'servers' ? 'X402 SERVERS' : 'X402 TRANSACTIONS'}
             </h1>
             <div className="flex gap-3">
-              <button
+              {/* <button
                 onClick={() => setViewMode(viewMode === 'servers' ? 'transactions' : 'servers')}
                 className="retro-button px-4 py-2"
               >
                 {viewMode === 'servers' ? 'SHOW TRANSACTIONS' : 'SHOW SERVERS'}
-              </button>
+              </button> */}
               {viewMode === 'servers' && (
                 <Link href="/discover" className="retro-button px-4 py-2">
                   VIEW RESOURCES

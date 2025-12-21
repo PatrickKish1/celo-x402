@@ -1,153 +1,327 @@
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any */
 'use client';
 
+/**
+ * ENHANCED CREATE API PAGE
+ * Features:
+ * - API Import (Swagger/OpenAPI, Postman, Insomnia)
+ * - Endpoint-level pricing
+ * - Endpoint testing UI
+ * - Output schema management
+ * - Different forms for native x402 vs non-x402
+ * - Updated code generation
+ */
+
 import { Header } from '@/components/ui/header';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppKitAccount } from '@reown/appkit/react';
 import Link from 'next/link';
-import { ArrowLeftIcon, CopyIcon, DownloadIcon, CodeIcon, AlertCircle, XIcon } from 'lucide-react';
+import { 
+  ArrowLeftIcon, 
+  CodeIcon, 
+  XIcon,
+  PlusIcon,
+  LoaderIcon,
+} from 'lucide-react';
 import { userServiceManager } from '@/lib/user-services';
 import { generateMiddleware, type Language, type MiddlewareType } from '@/lib/middleware-templates';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { testEndpoint, compareResponses } from '@/lib/endpoint-testing';
+import type { EnhancedEndpoint } from '@/lib/types/endpoint';
+import { squidRouter, type SquidChain, type SquidToken } from '@/lib/squid-router';
+import {
+  ApiImportSection,
+  BasicInfoSection,
+  PricingConfiguration,
+  EndpointCard,
+  CodeGenerationModal,
+} from '@/components/create-api';
 
-interface Endpoint {
-  id: string;
-  path: string;
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
-  description: string;
-  price: string;
-}
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://x402-manager-backend.vercel.app';
 
-interface HeaderField {
-  id: string;
-  key: string;
-  value: string;
-  required: boolean;
+function inferSchemaFromResponse(data: any): any {
+  if (data === null) return { type: 'null' };
+  if (Array.isArray(data)) {
+    if (data.length > 0) {
+      return { type: 'array', items: inferSchemaFromResponse(data[0]) };
+    }
+    return { type: 'array' };
+  }
+  if (typeof data === 'object') {
+    const properties: Record<string, any> = {};
+    for (const [key, value] of Object.entries(data)) {
+      properties[key] = inferSchemaFromResponse(value);
+    }
+    return { type: 'object', properties };
+  }
+  return { type: typeof data };
 }
 
 export default function CreateApiPage() {
   const router = useRouter();
   const { address, isConnected } = useAppKitAccount();
+  
+  // API Type
   const [apiType, setApiType] = useState<'existing' | 'native'>('existing');
-  const [baseUrl, setBaseUrl] = useState('');
-  const [healthEndpoint, setHealthEndpoint] = useState('/health');
-  const [healthStatus, setHealthStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
-  const [healthResponse, setHealthResponse] = useState('');
+  
+  // Basic Info
   const [apiName, setApiName] = useState('');
   const [apiDescription, setApiDescription] = useState('');
-  const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
-  const [headers, setHeaders] = useState<HeaderField[]>([]);
-  const [docsType, setDocsType] = useState<'swagger' | 'link' | 'manual'>('swagger');
-  const [docsUrl, setDocsUrl] = useState('');
-  const [docsContent, setDocsContent] = useState('');
-  const [pricing, setPricing] = useState({
+  const [baseUrl, setBaseUrl] = useState('');
+  
+  // Endpoints
+  const [endpoints, setEndpoints] = useState<EnhancedEndpoint[]>([]);
+  const [expandedEndpoint, setExpandedEndpoint] = useState<string | null>(null);
+  
+  // Chains and Tokens (from Squid Router)
+  const [chains, setChains] = useState<SquidChain[]>([]);
+  const [tokensByChain, setTokensByChain] = useState<Map<string, SquidToken[]>>(new Map());
+  const [loadingChains, setLoadingChains] = useState(false);
+  
+  // Service-level pricing (defaults) - Multi-chain support
+  const [defaultPricing, setDefaultPricing] = useState({
     basePrice: '0.05',
-    currency: 'USDC',
-    network: 'base',
-    useCustomToken: false,
-    customToken: {
-      address: '',
-      decimals: 6,
-      name: '',
-      version: '2',
-      symbol: ''
-    }
+    selectedChains: [] as Array<{
+      chainId: string;
+      chainName: string;
+      networkName: string;
+      tokenAddress: string;
+      tokenSymbol: string;
+      tokenDecimals: number;
+      tokenName: string;
+    }>,
   });
-  const [isCreating, setIsCreating] = useState(false);
+  
+  // Code Generation
   const [apiLanguage, setApiLanguage] = useState<Language>('node');
   const [middlewareType, setMiddlewareType] = useState<MiddlewareType>('middleware');
   const [showGeneratedCode, setShowGeneratedCode] = useState(false);
   const [generatedCode, setGeneratedCode] = useState<any>(null);
-  const [copiedFile, setCopiedFile] = useState<string | null>(null);
+  
+  // Alerts
   const [alertMessage, setAlertMessage] = useState<{ type: 'error' | 'success' | 'info'; message: string } | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
 
-  // Health check function
-  const testHealthEndpoint = async () => {
-    if (!baseUrl || !healthEndpoint) return;
-    
-    setHealthStatus('testing');
-    try {
-      const url = `${baseUrl}${healthEndpoint}`;
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      });
-      
-      const contentType = response.headers.get('content-type') || '';
-      const responseText = await response.text();
-      
-      // Check if response is JSON
-      let formattedResponse = responseText;
-      if (contentType.includes('application/json')) {
-        try {
-          const jsonData = JSON.parse(responseText);
-          formattedResponse = JSON.stringify(jsonData, null, 2);
-        } catch (e) {
-          // If JSON parse fails, use original text
-        }
-      } else if (contentType.includes('text/html')) {
-        formattedResponse = '[HTML Response - Not JSON]\n\n' + responseText.substring(0, 500) + (responseText.length > 500 ? '...\n\n(Truncated - HTML responses not supported)' : '');
+  // Fetch chains on mount
+  useEffect(() => {
+    const loadChains = async () => {
+      setLoadingChains(true);
+      try {
+        const chainsData = await squidRouter.getChains();
+        setChains(chainsData);
+      } catch (error) {
+        console.error('Error loading chains:', error);
+        setAlertMessage({ type: 'error', message: 'Failed to load chains. Please refresh the page.' });
+      } finally {
+        setLoadingChains(false);
       }
-      
-      setHealthResponse(`Status: ${response.status} ${response.statusText}\nContent-Type: ${contentType}\n\nResponse:\n${formattedResponse}`);
-      setHealthStatus(response.ok ? 'success' : 'error');
-    } catch (error) {
-      setHealthResponse(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      setHealthStatus('error');
+    };
+    loadChains();
+  }, []);
+
+  // Fetch tokens for a chain
+  const loadTokensForChain = async (chainId: string) => {
+    if (tokensByChain.has(chainId)) {
+      return tokensByChain.get(chainId)!;
     }
+    try {
+      const tokens = await squidRouter.getTokens(chainId);
+      setTokensByChain(prev => new Map(prev).set(chainId, tokens));
+      return tokens;
+    } catch (error) {
+      console.error(`Error loading tokens for chain ${chainId}:`, error);
+      return [];
+    }
+  };
+
+  // Add chain to default pricing
+  const addChainToPricing = async (chainId: string) => {
+    const chain = chains.find(c => c.chainId === chainId);
+    if (!chain) return;
+
+    const tokens = await loadTokensForChain(chainId);
+    if (tokens.length === 0) {
+      const networkName = (chain as any).networkName || chain.chainName;
+      setAlertMessage({ type: 'error', message: `No tokens found for ${networkName}` });
+      return;
+    }
+
+    const defaultToken = tokens.find(t => t.symbol === 'USDC') || tokens[0];
+    const networkName = (chain as any).networkName || chain.chainName;
+
+    setDefaultPricing(prev => ({
+      ...prev,
+      selectedChains: [
+        ...prev.selectedChains,
+        {
+          chainId: chain.chainId,
+          chainName: chain.chainName,
+          networkName: networkName,
+          tokenAddress: defaultToken.address,
+          tokenSymbol: defaultToken.symbol,
+          tokenDecimals: defaultToken.decimals,
+          tokenName: defaultToken.name,
+        },
+      ],
+    }));
+  };
+
+  // Remove chain from pricing
+  const removeChainFromPricing = (chainId: string) => {
+    setDefaultPricing(prev => ({
+      ...prev,
+      selectedChains: prev.selectedChains.filter(c => c.chainId !== chainId),
+    }));
+  };
+
+  // Update chain token
+  const updateChainToken = (chainId: string, token: SquidToken) => {
+    setDefaultPricing(prev => ({
+      ...prev,
+      selectedChains: prev.selectedChains.map(c =>
+        c.chainId === chainId
+          ? {
+              ...c,
+              tokenAddress: token.address,
+              tokenSymbol: token.symbol,
+              tokenDecimals: token.decimals,
+              tokenName: token.name,
+            }
+          : c
+      ),
+    }));
+  };
+
+  // Handle API import
+  const handleApiImport = (data: {
+    name?: string;
+    description?: string;
+    baseUrl?: string;
+    endpoints: EnhancedEndpoint[];
+  }) => {
+    if (data.name) setApiName(data.name);
+    if (data.description) setApiDescription(data.description);
+    if (data.baseUrl) setBaseUrl(data.baseUrl);
+    setEndpoints(data.endpoints);
   };
 
   // Add new endpoint
   const addEndpoint = () => {
-    const newEndpoint: Endpoint = {
-      id: Date.now().toString(),
-      path: '',
+    const newEndpoint: EnhancedEndpoint = {
+      id: `ep-${Date.now()}`,
+      endpoint: '/',
       method: 'GET',
       description: '',
-      price: '0.05'
+      pricePerRequest: null,
+      network: null,
+      currency: null,
+      tokenAddress: null,
+      tokenDecimals: null,
+      tokenName: null,
+      tokenVersion: null,
+      tokenSymbol: null,
+      expectedStatusCode: 200,
     };
     setEndpoints([...endpoints, newEndpoint]);
+    setExpandedEndpoint(newEndpoint.id);
   };
 
   // Update endpoint
-  const updateEndpoint = (id: string, field: keyof Endpoint, value: string) => {
+  const updateEndpoint = (id: string, updates: Partial<EnhancedEndpoint>) => {
     setEndpoints(endpoints.map(ep => 
-      ep.id === id ? { ...ep, [field]: value } : ep
+      ep.id === id ? { ...ep, ...updates } : ep
     ));
   };
 
   // Remove endpoint
   const removeEndpoint = (id: string) => {
     setEndpoints(endpoints.filter(ep => ep.id !== id));
+    if (expandedEndpoint === id) setExpandedEndpoint(null);
   };
 
-  // Add header field
-  const addHeader = () => {
-    const newHeader: HeaderField = {
-      id: Date.now().toString(),
-      key: '',
-      value: '',
-      required: false
-    };
-    setHeaders([...headers, newHeader]);
+  // Test endpoint
+  const testEndpointHandler = async (endpoint: EnhancedEndpoint) => {
+    if (!baseUrl.trim()) {
+      setAlertMessage({ type: 'error', message: 'Please provide a base URL first' });
+      return;
+    }
+
+    updateEndpoint(endpoint.id, { isTesting: true, testError: undefined });
+
+    try {
+      const testRequest: any = {
+        endpoint: endpoint.endpoint,
+        method: endpoint.method,
+        baseUrl: baseUrl,
+        pathParams: endpoint.pathParams ? Object.fromEntries(
+          Object.entries(endpoint.pathParams).map(([key]) => [key, ''])
+        ) : undefined,
+        queryParams: endpoint.queryParams ? Object.fromEntries(
+          Object.entries(endpoint.queryParams).map(([key]) => [key, ''])
+        ) : undefined,
+        headers: endpoint.headers,
+        body: endpoint.requestBody,
+        isX402: apiType === 'native',
+      };
+
+      const result = await testEndpoint(testRequest);
+
+      updateEndpoint(endpoint.id, {
+        isTesting: false,
+        testResponse: result.data,
+        testError: result.error,
+        testResponseTime: result.responseTime,
+        testStatus: result.statusCode,
+      });
+
+      if (!endpoint.outputSchema && result.success && result.data) {
+        try {
+          const schema = inferSchemaFromResponse(result.data);
+          updateEndpoint(endpoint.id, { outputSchema: schema });
+        } catch (e) {
+          // Ignore schema inference errors
+        }
+      }
+
+      if (apiType === 'native' && endpoint.x402Response && result.success) {
+        const comparison = compareResponses(result.data, endpoint.x402Response, endpoint.outputSchema);
+        updateEndpoint(endpoint.id, {
+          responseMatch: comparison.match,
+          responseDifferences: comparison.differences,
+        });
+      }
+    } catch (error) {
+      updateEndpoint(endpoint.id, {
+        isTesting: false,
+        testError: error instanceof Error ? error.message : 'Test failed',
+      });
+    }
   };
 
-  // Update header
-  const updateHeader = (id: string, field: keyof HeaderField, value: string | boolean) => {
-    setHeaders(headers.map(h => 
-      h.id === id ? { ...h, [field]: value } : h
-    ));
+  // Apply default pricing to all endpoints
+  const applyPricingToAll = () => {
+    if (defaultPricing.selectedChains.length === 0) {
+      setAlertMessage({ type: 'error', message: 'Please add at least one chain first' });
+      return;
+    }
+    
+    const firstChain = defaultPricing.selectedChains[0];
+    setEndpoints(endpoints.map(ep => ({
+      ...ep,
+      pricePerRequest: defaultPricing.basePrice,
+      network: firstChain.networkName.toLowerCase().replace(/\s+/g, '-'),
+      currency: firstChain.tokenSymbol,
+      tokenAddress: firstChain.tokenAddress,
+      tokenDecimals: firstChain.tokenDecimals,
+      tokenName: firstChain.tokenName,
+      tokenVersion: '2',
+      tokenSymbol: firstChain.tokenSymbol,
+    })));
+    setAlertMessage({ type: 'success', message: 'Applied default pricing to all endpoints' });
   };
 
-  // Remove header
-  const removeHeader = (id: string) => {
-    setHeaders(headers.filter(h => h.id !== id));
-  };
-
-  // Generate middleware code
+  // Generate code
   const handleGenerateCode = () => {
     if (!isConnected || !address) {
       setAlertMessage({ type: 'error', message: 'Please connect your wallet first' });
@@ -160,19 +334,64 @@ export default function CreateApiPage() {
     }
 
     if (apiType === 'existing' && !baseUrl.trim()) {
-      setAlertMessage({ type: 'error', message: 'Please provide a base URL for existing API' });
+      setAlertMessage({ type: 'error', message: 'Please provide a base URL' });
       return;
     }
 
     try {
+      // For existing APIs, require pricing configuration
+      if (apiType === 'existing') {
+        const firstChain = defaultPricing.selectedChains[0];
+        if (!firstChain) {
+          setAlertMessage({ type: 'error', message: 'Please add at least one chain first' });
+          return;
+        }
+      }
+
+      const firstChain = defaultPricing.selectedChains[0] || null;
+
       const middlewareConfig = {
-        price: pricing.basePrice,
-        currency: pricing.currency,
-        network: pricing.network,
+        price: defaultPricing.basePrice,
+        currency: firstChain?.tokenSymbol || '',
+        network: firstChain?.networkName.toLowerCase().replace(/\s+/g, '-') || '',
         payTo: address,
-        excludedPaths: ['/health', '/metrics'],
-        excludedMethods: ['OPTIONS'],
-        timeout: 30000,
+        backendUrl: BACKEND_URL,
+        endpoints: endpoints.map(ep => {
+          // Find chain config - try endpoint's network in all chains or default pricing
+          let endpointChain = null;
+          if (ep.network) {
+            endpointChain = defaultPricing.selectedChains.find(c => 
+              c.networkName.toLowerCase().replace(/\s+/g, '-') === ep.network
+            );
+            
+            if (!endpointChain) {
+              const chain = chains.find(c => {
+                const networkName = (c as any).networkName || c.chainName;
+                return networkName.toLowerCase().replace(/\s+/g, '-') === ep.network;
+              });
+              if (chain && ep.tokenAddress) {
+                endpointChain = {
+                  chainId: chain.chainId,
+                  networkName: (chain as any).networkName || chain.chainName,
+                  tokenSymbol: ep.tokenSymbol || '',
+                  tokenAddress: ep.tokenAddress,
+                } as any;
+              }
+            }
+          }
+          
+          endpointChain = endpointChain || firstChain;
+          
+          return {
+            endpoint: ep.endpoint,
+            method: ep.method,
+            price: ep.pricePerRequest || defaultPricing.basePrice,
+            network: endpointChain?.networkName.toLowerCase().replace(/\s+/g, '-') || '',
+            currency: ep.tokenSymbol || endpointChain?.tokenSymbol || '',
+            chainId: endpointChain?.chainId || '',
+            tokenAddress: ep.tokenAddress || endpointChain?.tokenAddress || '',
+          };
+        }),
       };
 
       const code = generateMiddleware(apiLanguage, middlewareType, middlewareConfig);
@@ -183,29 +402,6 @@ export default function CreateApiPage() {
       console.error('Error generating code:', error);
       setAlertMessage({ type: 'error', message: 'Error generating code. Please check your configuration.' });
     }
-  };
-
-  const handleCopy = (content: string, fileName: string) => {
-    navigator.clipboard.writeText(content);
-    setCopiedFile(fileName);
-    setTimeout(() => setCopiedFile(null), 2000);
-  };
-
-  const handleDownload = (fileName: string, content: string) => {
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleDownloadAll = () => {
-    if (!generatedCode) return;
-    generatedCode.files.forEach((file: any) => {
-      handleDownload(file.name, file.content);
-    });
   };
 
   // Create API
@@ -221,41 +417,37 @@ export default function CreateApiPage() {
     }
 
     if (apiType === 'existing' && !baseUrl.trim()) {
-      setAlertMessage({ type: 'error', message: 'Please provide a base URL for existing API' });
+      setAlertMessage({ type: 'error', message: 'Please provide a base URL' });
+      return;
+    }
+
+    if (endpoints.length === 0) {
+      setAlertMessage({ type: 'error', message: 'Please add at least one endpoint' });
       return;
     }
 
     setIsCreating(true);
 
     try {
-      // Generate resource URL
       const resourceUrl = apiType === 'existing' 
         ? baseUrl 
         : `${typeof window !== 'undefined' ? window.location.origin : ''}/api/x402/${apiName.toLowerCase().replace(/\s+/g, '-')}`;
 
-      // Generate proxy URL (for proxy mode)
       const proxyUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/api/x402/proxy/${apiName.toLowerCase().replace(/\s+/g, '-')}`;
 
-      // Validate custom token if enabled
-      if (pricing.useCustomToken) {
-        if (!pricing.customToken.address.trim()) {
-          setAlertMessage({ type: 'error', message: 'Please provide a token contract address' });
-          setIsCreating(false);
-          return;
-        }
-        if (!pricing.customToken.symbol.trim()) {
-          setAlertMessage({ type: 'error', message: 'Please provide a token symbol' });
-          setIsCreating(false);
-          return;
-        }
-        if (!pricing.customToken.name.trim()) {
-          setAlertMessage({ type: 'error', message: 'Please provide a token name' });
+      // For existing APIs, require pricing configuration
+      if (apiType === 'existing') {
+        const firstChain = defaultPricing.selectedChains[0];
+        if (!firstChain) {
+          setAlertMessage({ type: 'error', message: 'Please add at least one chain for pricing' });
           setIsCreating(false);
           return;
         }
       }
 
-      // Save to user services
+      // For native x402 APIs, use default values or endpoint-specific values
+      const firstChain = defaultPricing.selectedChains[0] || null;
+
       const service = userServiceManager.addUserService({
         resource: resourceUrl,
         ownerAddress: address,
@@ -267,23 +459,125 @@ export default function CreateApiPage() {
         language: apiLanguage,
         status: 'pending',
         discoverable: true,
-        pricing: {
-          amount: pricing.basePrice,
-          currency: pricing.customToken.symbol || pricing.currency,
-          network: pricing.network,
+        pricing: firstChain ? {
+          amount: defaultPricing.basePrice,
+          currency: firstChain.tokenSymbol,
+          network: firstChain.networkName.toLowerCase().replace(/\s+/g, '-'),
+        } : {
+          amount: '0',
+          currency: 'USDC',
+          network: 'base',
         },
-        tokenConfig: pricing.useCustomToken ? {
-          address: pricing.customToken.address,
-          decimals: pricing.customToken.decimals,
-          name: pricing.customToken.name,
-          version: pricing.customToken.version,
-          symbol: pricing.customToken.symbol,
-        } : undefined,
+        tokenConfig: firstChain ? {
+          address: firstChain.tokenAddress,
+          decimals: firstChain.tokenDecimals,
+          name: firstChain.tokenName,
+          version: '2',
+          symbol: firstChain.tokenSymbol,
+        } : {
+          address: '',
+          decimals: 18,
+          name: 'USDC',
+          version: '2',
+          symbol: 'USDC',
+        },
       });
+
+      try {
+        await fetch(`${BACKEND_URL}/api/user-services/${service.id}/endpoints`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            endpoints: endpoints.map(ep => {
+              // Find chain config - first try endpoint's network, then default pricing, then first chain
+              let endpointChain = null;
+              if (ep.network) {
+                // Try to find in default pricing chains first
+                endpointChain = defaultPricing.selectedChains.find(c => 
+                  c.networkName.toLowerCase().replace(/\s+/g, '-') === ep.network
+                );
+                
+                // If not found, try to find in all chains
+                if (!endpointChain) {
+                  const chain = chains.find(c => {
+                    const networkName = (c as any).networkName || c.chainName;
+                    return networkName.toLowerCase().replace(/\s+/g, '-') === ep.network;
+                  });
+                  if (chain && ep.tokenAddress) {
+                    // Create a chain config from the endpoint's data
+                    endpointChain = {
+                      chainId: chain.chainId,
+                      chainName: chain.chainName,
+                      networkName: (chain as any).networkName || chain.chainName,
+                      tokenAddress: ep.tokenAddress,
+                      tokenSymbol: ep.tokenSymbol || '',
+                      tokenDecimals: ep.tokenDecimals || 18,
+                      tokenName: ep.tokenName || '',
+                    };
+                  }
+                }
+              }
+              
+              // Fallback to first chain from default pricing or null for native APIs
+              if (!endpointChain) {
+                endpointChain = firstChain;
+              }
+
+              return {
+                endpoint: ep.endpoint,
+                method: ep.method,
+                description: ep.description,
+                pricePerRequest: apiType === 'existing' ? (ep.pricePerRequest || defaultPricing.basePrice) : null,
+                network: endpointChain ? endpointChain.networkName.toLowerCase().replace(/\s+/g, '-') : ep.network,
+                currency: ep.tokenSymbol || endpointChain?.tokenSymbol || null,
+                tokenAddress: ep.tokenAddress || endpointChain?.tokenAddress || null,
+                tokenDecimals: ep.tokenDecimals || endpointChain?.tokenDecimals || null,
+                tokenName: ep.tokenName || endpointChain?.tokenName || null,
+                tokenVersion: ep.tokenVersion || '2',
+                tokenSymbol: ep.tokenSymbol || endpointChain?.tokenSymbol || null,
+                extra: endpointChain ? JSON.stringify({
+                  chainId: endpointChain.chainId,
+                  networkName: endpointChain.networkName,
+                  chainName: endpointChain.chainName,
+                  supportedChains: defaultPricing.selectedChains.length > 0 
+                    ? defaultPricing.selectedChains.map(c => ({
+                        chainId: c.chainId,
+                        networkName: c.networkName,
+                        chainName: c.chainName,
+                        tokenAddress: c.tokenAddress,
+                        tokenSymbol: c.tokenSymbol,
+                        tokenDecimals: c.tokenDecimals,
+                      }))
+                    : [],
+                }) : null,
+                pathParams: ep.pathParams ? JSON.stringify(ep.pathParams) : null,
+                queryParams: ep.queryParams ? JSON.stringify(ep.queryParams) : null,
+                headers: ep.headers ? JSON.stringify(ep.headers) : null,
+                requestBody: ep.requestBody ? JSON.stringify(ep.requestBody) : null,
+                outputSchema: ep.outputSchema ? JSON.stringify(ep.outputSchema) : null,
+                expectedStatusCode: ep.expectedStatusCode,
+              };
+            }),
+            multiChainConfig: apiType === 'existing' ? {
+              basePrice: defaultPricing.basePrice,
+              supportedChains: defaultPricing.selectedChains.map(c => ({
+                chainId: c.chainId,
+                networkName: c.networkName,
+                chainName: c.chainName,
+                tokenAddress: c.tokenAddress,
+                tokenSymbol: c.tokenSymbol,
+                tokenDecimals: c.tokenDecimals,
+                tokenName: c.tokenName,
+              })),
+            } : null,
+          }),
+        });
+      } catch (error) {
+        console.error('Error saving endpoints:', error);
+      }
 
       setAlertMessage({ type: 'success', message: 'API created successfully! Redirecting...' });
       
-      // Redirect to dashboard after a brief delay
       setTimeout(() => {
         router.push(`/dashboard/services/${service.id}`);
       }, 1000);
@@ -299,715 +593,165 @@ export default function CreateApiPage() {
     <div className="min-h-screen flex flex-col bg-white">
       <Header />
       
-      <main className="flex-grow py-12 px-4">
-        <div className="container mx-auto max-w-4xl">
-          {/* Alert Message */}
-          {alertMessage && (
-            <Alert 
-              className={`mb-6 ${
-                alertMessage.type === 'error' ? 'bg-red-50 border-red-200' : 
-                alertMessage.type === 'success' ? 'bg-green-50 border-green-200' : 
-                'bg-blue-50 border-blue-200'
+      <main className="flex-1 container mx-auto px-4 py-8 max-w-7xl">
+        {/* Header */}
+        <div className="flex items-center gap-4 mb-8">
+          <Link href="/dashboard" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+            <ArrowLeftIcon className="w-5 h-5 text-gray-600" />
+          </Link>
+          <div>
+            <p className="text-2xl font-bold text-gray-900">Create New API</p>
+            <p className="text-gray-600 text-base mt-1">Set up your x402-enabled API service</p>
+          </div>
+        </div>
+
+        {/* Alert */}
+        {alertMessage && (
+          <Alert className={`mb-6 ${alertMessage.type === 'error' ? 'bg-red-50 border-red-200' : alertMessage.type === 'success' ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'}`}>
+            <AlertDescription className={alertMessage.type === 'error' ? 'text-red-800' : alertMessage.type === 'success' ? 'text-green-800' : 'text-blue-800'}>
+              {alertMessage.message}
+            </AlertDescription>
+            <button onClick={() => setAlertMessage(null)} className="ml-auto">
+              <XIcon className="w-4 h-4" />
+            </button>
+          </Alert>
+        )}
+
+        {/* API Type Selection */}
+        <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">API Type</h2>
+          <div className="grid grid-cols-2 gap-4">
+            <button
+              onClick={() => setApiType('existing')}
+              className={`p-4 rounded-lg border-2 transition-all text-left ${
+                apiType === 'existing'
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-200 hover:border-gray-300'
               }`}
             >
-              <AlertCircle className={`h-4 w-4 ${
-                alertMessage.type === 'error' ? 'text-red-600' : 
-                alertMessage.type === 'success' ? 'text-green-600' : 
-                'text-blue-600'
-              }`} />
-              <AlertDescription className={`flex items-center justify-between ${
-                alertMessage.type === 'error' ? 'text-red-800' : 
-                alertMessage.type === 'success' ? 'text-green-800' : 
-                'text-blue-800'
-              }`}>
-                <span className="font-mono">{alertMessage.message}</span>
-                <button
-                  onClick={() => setAlertMessage(null)}
-                  className="ml-4 p-1 hover:bg-white/50 rounded"
-                >
-                  <XIcon className="h-4 w-4" />
-                </button>
-              </AlertDescription>
-            </Alert>
-          )}
+              <div className="font-bold text-gray-900 mb-1">Existing API</div>
+              <div className="text-sm text-gray-600">Proxy your existing API through x402 gateway</div>
+            </button>
+            <button
+              onClick={() => setApiType('native')}
+              className={`p-4 rounded-lg border-2 transition-all text-left ${
+                apiType === 'native'
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className="font-bold text-gray-900 mb-1">Native x402 API</div>
+              <div className="text-sm text-gray-600">Already implements x402 protocol</div>
+            </button>
+          </div>
+        </div>
 
-          {/* Page Header */}
-          <div className="mb-8">
-            <nav className="mb-6">
-              <Link href="/dashboard" className="text-blue-600 hover:underline font-mono text-nowrap">
-                <ArrowLeftIcon className="w-4 h-4" /> BACK TO DASHBOARD
-              </Link>
-            </nav>
-            <h1 className="text-4xl font-bold font-mono tracking-wider mb-4">
-              CREATE NEW API
-            </h1>
-            <p className="text-xl font-mono text-gray-700">
-              Transform existing APIs into x402 services or add native x402 APIs
-            </p>
+        {/* API Import Section */}
+        <ApiImportSection
+          onImport={handleApiImport}
+          onError={(msg) => setAlertMessage({ type: 'error', message: msg })}
+          onSuccess={(msg) => setAlertMessage({ type: 'success', message: msg })}
+        />
+
+        {/* Basic Information */}
+        <BasicInfoSection
+          apiName={apiName}
+          apiDescription={apiDescription}
+          baseUrl={baseUrl}
+          apiType={apiType}
+          onNameChange={setApiName}
+          onDescriptionChange={setApiDescription}
+          onBaseUrlChange={setBaseUrl}
+        />
+
+        {/* Default Pricing Configuration - Only for existing APIs */}
+        {apiType === 'existing' && (
+          <PricingConfiguration
+            basePrice={defaultPricing.basePrice}
+            selectedChains={defaultPricing.selectedChains}
+            chains={chains}
+            tokensByChain={tokensByChain}
+            loadingChains={loadingChains}
+            onBasePriceChange={(price) => setDefaultPricing({ ...defaultPricing, basePrice: price })}
+            onAddChain={addChainToPricing}
+            onRemoveChain={removeChainFromPricing}
+            onUpdateChainToken={updateChainToken}
+            onLoadTokens={loadTokensForChain}
+            onApplyToAll={applyPricingToAll}
+          />
+        )}
+
+        {/* Endpoints Section */}
+        <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-900">Endpoints</h2>
+            <button
+              onClick={addEndpoint}
+              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-secondary hover:text-primary flex items-center gap-2"
+            >
+              <PlusIcon className="w-4 h-4" />
+              Add Endpoint
+            </button>
           </div>
 
-          <form onSubmit={(e) => { e.preventDefault(); createApi(); }} className="space-y-8">
-            {/* API Type Selection */}
-            <div className="retro-card">
-              <h2 className="text-2xl font-bold font-mono mb-6 tracking-wide">
-                API TYPE
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <button
-                  type="button"
-                  onClick={() => setApiType('existing')}
-                  className={`p-4 border-2 border-black text-left transition-all ${
-                    apiType === 'existing' 
-                      ? 'bg-black text-white' 
-                      : 'bg-white hover:bg-gray-50'
-                  }`}
-                >
-                  <div className="font-mono font-bold mb-2">EXISTING API</div>
-                  <div className="text-sm">Wrap non-x402 APIs with x402 payment layer</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setApiType('native')}
-                  className={`p-4 border-2 border-black text-left transition-all ${
-                    apiType === 'native' 
-                      ? 'bg-black text-white' 
-                      : 'bg-white hover:bg-gray-50'
-                  }`}
-                >
-                  <div className="font-mono font-bold mb-2">NATIVE X402</div>
-                  <div className="text-sm">API already built with x402 protocol</div>
-                </button>
-              </div>
+          {endpoints.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">
+              <p>No endpoints yet. Add one manually or import from documentation.</p>
             </div>
-
-            {/* Basic API Information */}
-            <div className="retro-card">
-              <h2 className="text-2xl font-bold font-mono mb-6 tracking-wide">
-                BASIC INFORMATION
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block font-mono font-bold text-sm mb-2">
-                    API NAME
-                  </label>
-                  <input
-                    type="text"
-                    value={apiName}
-                    onChange={(e) => setApiName(e.target.value)}
-                    placeholder="e.g., Weather Data API"
-                    className="retro-input w-full"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block font-mono font-bold text-sm mb-2">
-                    BASE URL
-                  </label>
-                  <input
-                    type="url"
-                    value={baseUrl}
-                    onChange={(e) => setBaseUrl(e.target.value)}
-                    placeholder="https://api.example.com"
-                    className="retro-input w-full"
-                    required
-                  />
-                </div>
-              </div>
-              <div className="mt-6">
-                <label className="block font-mono font-bold text-sm mb-2">
-                  DESCRIPTION
-                </label>
-                <textarea
-                  value={apiDescription}
-                  onChange={(e) => setApiDescription(e.target.value)}
-                  placeholder="Describe what your API does..."
-                  rows={3}
-                  className="retro-input w-full"
-                  required
+          ) : (
+            <div className="space-y-4">
+              {endpoints.map((endpoint) => (
+                <EndpointCard
+                  key={endpoint.id}
+                  endpoint={endpoint}
+                  baseUrl={baseUrl}
+                  apiType={apiType}
+                  defaultPricing={defaultPricing}
+                  chains={chains}
+                  tokensByChain={tokensByChain}
+                  isExpanded={expandedEndpoint === endpoint.id}
+                  onToggleExpand={() => setExpandedEndpoint(expandedEndpoint === endpoint.id ? null : endpoint.id)}
+                  onUpdate={(updates) => updateEndpoint(endpoint.id, updates)}
+                  onTest={() => testEndpointHandler(endpoint)}
+                  onRemove={() => removeEndpoint(endpoint.id)}
+                  onLoadTokens={loadTokensForChain}
                 />
-              </div>
+              ))}
             </div>
-
-            {/* Health Check */}
-            <div className="retro-card">
-              <h2 className="text-2xl font-bold font-mono mb-6 tracking-wide">
-                HEALTH CHECK ENDPOINT
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-                <div>
-                  <label className="block font-mono font-bold text-sm mb-2">
-                    HEALTH ENDPOINT
-                  </label>
-                  <input
-                    type="text"
-                    value={healthEndpoint}
-                    onChange={(e) => setHealthEndpoint(e.target.value)}
-                    placeholder="/health"
-                    className="retro-input w-full"
-                  />
-                </div>
-                <div>
-                  <button
-                    type="button"
-                    onClick={testHealthEndpoint}
-                    disabled={!baseUrl || healthStatus === 'testing'}
-                    className="retro-button w-full disabled:opacity-50"
-                  >
-                    {healthStatus === 'testing' ? 'TESTING...' : 'TEST ENDPOINT'}
-                  </button>
-                </div>
-                <div className="text-center">
-                  {healthStatus === 'success' && (
-                    <div className="text-green-600 font-mono text-sm">✓ HEALTHY</div>
-                  )}
-                  {healthStatus === 'error' && (
-                    <div className="text-red-600 font-mono text-sm">✗ UNHEALTHY</div>
-                  )}
-                </div>
-              </div>
-              {healthResponse && (
-                <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded max-h-[400px] overflow-y-auto">
-                  <div className="font-mono text-sm whitespace-pre-wrap break-words">{healthResponse}</div>
-                </div>
-              )}
-            </div>
-
-            {/* Endpoints Management */}
-            <div className="retro-card">
-              <h2 className="text-2xl font-bold font-mono mb-6 tracking-wide">
-                API ENDPOINTS
-              </h2>
-              <div className="space-y-4">
-                {endpoints.map((endpoint, index) => (
-                  <div key={endpoint.id} className="border-2 border-black p-4">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                      <div>
-                        <label className="block font-mono font-bold text-sm mb-2">
-                          ENDPOINT PATH
-                        </label>
-                        <input
-                          type="text"
-                          value={endpoint.path}
-                          onChange={(e) => updateEndpoint(endpoint.id, 'path', e.target.value)}
-                          placeholder="/new-report"
-                          className="retro-input w-full"
-                        />
-                      </div>
-                      <div>
-                        <label className="block font-mono font-bold text-sm mb-2">
-                          HTTP METHOD
-                        </label>
-                        <select
-                          value={endpoint.method}
-                          onChange={(e) => updateEndpoint(endpoint.id, 'method', e.target.value as any)}
-                          className="retro-input w-full"
-                        >
-                          <option value="GET">GET</option>
-                          <option value="POST">POST</option>
-                          <option value="PUT">PUT</option>
-                          <option value="DELETE">DELETE</option>
-                          <option value="PATCH">PATCH</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block font-mono font-bold text-sm mb-2">
-                          PRICE (USDC)
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={endpoint.price}
-                          onChange={(e) => updateEndpoint(endpoint.id, 'price', e.target.value)}
-                          className="retro-input w-full"
-                        />
-                      </div>
-                      <div className="flex items-end">
-                        <button
-                          type="button"
-                          onClick={() => removeEndpoint(endpoint.id)}
-                          className="retro-button bg-red-100 text-red-800 w-full"
-                        >
-                          REMOVE
-                        </button>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block font-mono font-bold text-sm mb-2">
-                        DESCRIPTION
-                      </label>
-                      <input
-                        type="text"
-                        value={endpoint.description}
-                        onChange={(e) => updateEndpoint(endpoint.id, 'description', e.target.value)}
-                        placeholder="What does this endpoint do?"
-                        className="retro-input w-full"
-                      />
-                    </div>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={addEndpoint}
-                  className="retro-button bg-gray-100 w-full"
-                >
-                  + ADD ENDPOINT
-                </button>
-              </div>
-            </div>
-
-            {/* Headers Configuration */}
-            <div className="retro-card">
-              <h2 className="text-2xl font-bold font-mono mb-6 tracking-wide">
-                CUSTOM HEADERS
-              </h2>
-              <p className="text-gray-600 mb-4 font-mono text-sm">
-                Note: x402 handles payments, so API keys are not required. Add any other custom headers your API needs.
-              </p>
-              <div className="space-y-4">
-                {headers.map((header) => (
-                  <div key={header.id} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-                    <div>
-                      <label className="block font-mono font-bold text-sm mb-2">
-                        HEADER KEY
-                      </label>
-                      <input
-                        type="text"
-                        value={header.key}
-                        onChange={(e) => updateHeader(header.id, 'key', e.target.value)}
-                        placeholder="X-Custom-Header"
-                        className="retro-input w-full"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-mono font-bold text-sm mb-2">
-                        HEADER VALUE
-                      </label>
-                      <input
-                        type="text"
-                        value={header.value}
-                        onChange={(e) => updateHeader(header.id, 'value', e.target.value)}
-                        placeholder="header-value"
-                        className="retro-input w-full"
-                      />
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id={`required-${header.id}`}
-                        checked={header.required}
-                        onChange={(e) => updateHeader(header.id, 'required', e.target.checked)}
-                        className="h-4 w-4"
-                      />
-                      <label htmlFor={`required-${header.id}`} className="font-mono text-sm">
-                        REQUIRED
-                      </label>
-                    </div>
-                    <div>
-                      <button
-                        type="button"
-                        onClick={() => removeHeader(header.id)}
-                        className="retro-button bg-red-100 text-red-800 w-full"
-                      >
-                        REMOVE
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={addHeader}
-                  className="retro-button bg-gray-100 w-full"
-                >
-                  + ADD HEADER
-                </button>
-              </div>
-            </div>
-
-            {/* Documentation */}
-            <div className="retro-card">
-              <h2 className="text-2xl font-bold font-mono mb-6 tracking-wide">
-                DOCUMENTATION
-              </h2>
-              <div className="space-y-4">
-                <div>
-                  <label className="block font-mono font-bold text-sm mb-2">
-                    DOCUMENTATION TYPE
-                  </label>
-                  <select
-                    value={docsType}
-                    onChange={(e) => setDocsType(e.target.value as any)}
-                    className="retro-input w-full"
-                  >
-                    <option value="swagger">Swagger/OpenAPI</option>
-                    <option value="link">Documentation Link</option>
-                    <option value="manual">Manual Documentation</option>
-                  </select>
-                </div>
-                
-                {docsType === 'swagger' && (
-                  <div>
-                    <label className="block font-mono font-bold text-sm mb-2">
-                      SWAGGER URL
-                    </label>
-                    <input
-                      type="url"
-                      value={docsUrl}
-                      onChange={(e) => setDocsUrl(e.target.value)}
-                      placeholder="https://api.example.com/swagger.json"
-                      className="retro-input w-full"
-                    />
-                  </div>
-                )}
-                
-                {docsType === 'link' && (
-                  <div>
-                    <label className="block font-mono font-bold text-sm mb-2">
-                      DOCUMENTATION URL
-                    </label>
-                    <input
-                      type="url"
-                      value={docsUrl}
-                      onChange={(e) => setDocsUrl(e.target.value)}
-                      placeholder="https://docs.example.com"
-                      className="retro-input w-full"
-                    />
-                  </div>
-                )}
-                
-                {docsType === 'manual' && (
-                  <div>
-                    <label className="block font-mono font-bold text-sm mb-2">
-                      MANUAL DOCUMENTATION
-                    </label>
-                    <textarea
-                      value={docsContent}
-                      onChange={(e) => setDocsContent(e.target.value)}
-                      placeholder="Describe your API endpoints, parameters, and responses..."
-                      rows={6}
-                      className="retro-input w-full"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* API Language & Middleware Type */}
-            <div className="retro-card">
-              <h2 className="text-2xl font-bold font-mono mb-6 tracking-wide">
-                API LANGUAGE & MIDDLEWARE TYPE
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                <div>
-                  <label className="block font-mono font-bold text-sm mb-2">
-                    YOUR API LANGUAGE
-                  </label>
-                  <select
-                    value={apiLanguage}
-                    onChange={(e) => setApiLanguage(e.target.value as Language)}
-                    className="retro-input w-full"
-                  >
-                    <option value="node">Node.js (JavaScript/TypeScript)</option>
-                    <option value="python">Python (Flask/FastAPI)</option>
-                    <option value="java">Java (Spring Boot)</option>
-                  </select>
-                  <p className="text-xs text-gray-600 mt-1 font-mono">
-                    Select the language your API is built in
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block font-mono font-bold text-sm mb-2">
-                    MIDDLEWARE TYPE
-                  </label>
-                  <select
-                    value={middlewareType}
-                    onChange={(e) => setMiddlewareType(e.target.value as MiddlewareType)}
-                    className="retro-input w-full"
-                  >
-                    <option value="middleware">Middleware (Add to existing API)</option>
-                    <option value="proxy">Proxy (Standalone gateway)</option>
-                  </select>
-                  <p className="text-xs text-gray-600 mt-1 font-mono">
-                    {middlewareType === 'middleware' 
-                      ? 'Add x402 protection to your existing API'
-                      : 'Standalone proxy that wraps your API'}
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleGenerateCode}
-                disabled={!isConnected || !apiName.trim()}
-                className="retro-button w-full disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                <CodeIcon className="w-4 h-4" />
-                GENERATE MIDDLEWARE CODE
-              </button>
-            </div>
-
-            {/* Generated Code Display */}
-            {showGeneratedCode && generatedCode && (
-              <div className="retro-card">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-2xl font-bold font-mono tracking-wide">
-                    GENERATED CODE
-                  </h2>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={handleDownloadAll}
-                      className="retro-button text-sm px-3 py-1"
-                    >
-                      <DownloadIcon className="w-4 h-4 inline mr-1" />
-                      DOWNLOAD ALL
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowGeneratedCode(false)}
-                      className="retro-button bg-gray-100 text-sm px-3 py-1"
-                    >
-                      HIDE
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mb-4 p-3 bg-gray-50 border-2 border-gray-300">
-                  <h3 className="font-mono font-bold text-sm mb-2">INSTRUCTIONS</h3>
-                  <p className="text-sm font-mono text-gray-700 whitespace-pre-line">
-                    {generatedCode.instructions}
-                  </p>
-                </div>
-
-                <div className="space-y-4">
-                  {generatedCode.files.map((file: any, index: number) => (
-                    <div key={index} className="border-2 border-black">
-                      <div className="bg-gray-100 px-4 py-2 flex items-center justify-between border-b-2 border-black">
-                        <div>
-                          <div className="font-mono font-bold text-sm">{file.name}</div>
-                          <div className="font-mono text-xs text-gray-600">{file.description}</div>
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleCopy(file.content, file.name)}
-                            className="retro-button text-xs px-2 py-1"
-                            title="Copy to clipboard"
-                          >
-                            {copiedFile === file.name ? '✓' : <CopyIcon className="w-3 h-3" />}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDownload(file.name, file.content)}
-                            className="retro-button text-xs px-2 py-1"
-                            title="Download file"
-                          >
-                            <DownloadIcon className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                      <pre className="p-4 bg-gray-900 text-green-400 font-mono text-xs overflow-x-auto max-h-96 overflow-y-auto">
-                        <code>{file.content}</code>
-                      </pre>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Pricing Configuration */}
-            <div className="retro-card">
-              <h2 className="text-2xl font-bold font-mono mb-6 tracking-wide">
-                PRICING CONFIGURATION
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                  <label className="block font-mono font-bold text-sm mb-2">
-                    BASE PRICE (USDC)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={pricing.basePrice}
-                    onChange={(e) => setPricing({...pricing, basePrice: e.target.value})}
-                    className="retro-input w-full"
-                  />
-                </div>
-                <div>
-                  <label className="block font-mono font-bold text-sm mb-2">
-                    CURRENCY
-                  </label>
-                  <select
-                    value={pricing.currency}
-                    onChange={(e) => setPricing({...pricing, currency: e.target.value})}
-                    className="retro-input w-full"
-                  >
-                    <option value="USDC">USDC</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-mono font-bold text-sm mb-2">
-                    NETWORK <span className="text-xs text-gray-500 ml-2">(Popular: Base & Solana)</span>
-                  </label>
-                  <select
-                    value={pricing.network}
-                    onChange={(e) => setPricing({...pricing, network: e.target.value})}
-                    className="retro-input w-full"
-                  >
-                    <optgroup label="Most Popular">
-                      <option value="base">Base (Recommended)</option>
-                      <option value="solana">Solana (Coming Soon)</option>
-                    </optgroup>
-                    <optgroup label="EVM Chains">
-                      <option value="ethereum">Ethereum</option>
-                      <option value="optimism">Optimism</option>
-                      <option value="arbitrum">Arbitrum</option>
-                      <option value="polygon">Polygon</option>
-                    </optgroup>
-                    <optgroup label="Testnets">
-                      <option value="base-sepolia">Base Sepolia</option>
-                      <option value="sepolia">Sepolia</option>
-                    </optgroup>
-                  </select>
-                </div>
-              </div>
-              
-              {/* Custom Token Configuration */}
-              <div className="mt-6 p-4 border-2 border-dashed border-gray-300 rounded">
-                <div className="flex items-center gap-3 mb-4">
-                  <input
-                    type="checkbox"
-                    id="useCustomToken"
-                    checked={pricing.useCustomToken}
-                    onChange={(e) => setPricing({...pricing, useCustomToken: e.target.checked})}
-                    className="w-4 h-4"
-                  />
-                  <label htmlFor="useCustomToken" className="font-mono font-bold text-sm cursor-pointer">
-                    USE CUSTOM ERC-20 TOKEN
-                    <span className="text-xs text-gray-500 ml-2 font-normal">(Advanced)</span>
-                  </label>
-                </div>
-                
-                {pricing.useCustomToken && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                    <div>
-                      <label className="block font-mono font-bold text-sm mb-2">
-                        TOKEN CONTRACT ADDRESS <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={pricing.customToken.address}
-                        onChange={(e) => setPricing({
-                          ...pricing,
-                          customToken: {...pricing.customToken, address: e.target.value}
-                        })}
-                        placeholder="0x..."
-                        className="retro-input w-full font-mono text-sm"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">ERC-20 token contract address on selected network</p>
-                    </div>
-                    
-                    <div>
-                      <label className="block font-mono font-bold text-sm mb-2">
-                        TOKEN SYMBOL <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={pricing.customToken.symbol}
-                        onChange={(e) => setPricing({
-                          ...pricing,
-                          customToken: {...pricing.customToken, symbol: e.target.value}
-                        })}
-                        placeholder="e.g., WETH, DAI"
-                        className="retro-input w-full"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Token symbol for display</p>
-                    </div>
-                    
-                    <div>
-                      <label className="block font-mono font-bold text-sm mb-2">
-                        TOKEN NAME <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={pricing.customToken.name}
-                        onChange={(e) => setPricing({
-                          ...pricing,
-                          customToken: {...pricing.customToken, name: e.target.value}
-                        })}
-                        placeholder="e.g., Wrapped Ether, Dai Stablecoin"
-                        className="retro-input w-full"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Full token name (for EIP-712 signing)</p>
-                    </div>
-                    
-                    <div>
-                      <label className="block font-mono font-bold text-sm mb-2">
-                        DECIMALS <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="18"
-                        value={pricing.customToken.decimals}
-                        onChange={(e) => setPricing({
-                          ...pricing,
-                          customToken: {...pricing.customToken, decimals: parseInt(e.target.value) || 0}
-                        })}
-                        className="retro-input w-full"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Token decimals (USDC=6, WETH=18)</p>
-                    </div>
-                    
-                    <div>
-                      <label className="block font-mono font-bold text-sm mb-2">
-                        EIP-712 VERSION
-                      </label>
-                      <input
-                        type="text"
-                        value={pricing.customToken.version}
-                        onChange={(e) => setPricing({
-                          ...pricing,
-                          customToken: {...pricing.customToken, version: e.target.value}
-                        })}
-                        placeholder="2"
-                        className="retro-input w-full"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">{`EIP-712 domain version (default: "2")`}</p>
-                    </div>
-                    
-                    <div className="col-span-2">
-                      <div className="bg-yellow-50 border-2 border-yellow-300 p-3 rounded">
-                        <p className="text-sm font-mono text-yellow-800">
-                          <strong>Important:</strong> Ensure the token contract is deployed on the selected network and supports EIP-3009 (TransferWithAuthorization) or has a standard ERC-20 transfer function.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Submit Button */}
-            <div className="flex gap-4">
-              <button
-                type="submit"
-                disabled={isCreating || !isConnected}
-                className="retro-button flex-1 text-lg py-4 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isCreating ? 'CREATING...' : isConnected ? 'CREATE X402 API' : 'CONNECT WALLET FIRST'}
-              </button>
-              <Link
-                href="/dashboard"
-                className="retro-button bg-gray-100 flex-1 text-center text-lg py-4"
-              >
-                CANCEL
-              </Link>
-            </div>
-          </form>
+          )}
         </div>
+
+        {/* Code Generation & Create Buttons */}
+        <div className="flex gap-4">
+          <button
+            onClick={handleGenerateCode}
+            className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2"
+          >
+            <CodeIcon className="w-5 h-5" />
+            Generate Code
+          </button>
+          <button
+            onClick={createApi}
+            disabled={isCreating}
+            className="flex-1 px-6 py-3 retro-button rounded-lg disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {isCreating ? (
+              <>
+                <LoaderIcon className="w-5 h-5 animate-spin" />
+                Creating...
+              </>
+            ) : (
+              'Create API'
+            )}
+          </button>
+        </div>
+
+        {/* Generated Code Modal */}
+        <CodeGenerationModal
+          generatedCode={generatedCode}
+          onClose={() => setShowGeneratedCode(false)}
+          onCopySuccess={(msg) => setAlertMessage({ type: 'success', message: msg })}
+        />
       </main>
     </div>
   );

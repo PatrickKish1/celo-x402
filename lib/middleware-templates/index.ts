@@ -15,6 +15,14 @@ export interface MiddlewareConfig {
   excludedPaths?: string[];
   excludedMethods?: string[];
   timeout?: number;
+  backendUrl?: string; // x402 backend API URL
+  endpoints?: Array<{
+    endpoint: string;
+    method: string;
+    price?: string;
+    network?: string;
+    currency?: string;
+  }>; // Endpoint-level pricing configuration
 }
 
 export interface GeneratedCode {
@@ -69,7 +77,7 @@ app.use(express.json());
 const X402_CONFIG = {
   serviceId: process.env.X402_SERVICE_ID, // Your service ID from x402 dashboard
   userId: process.env.X402_USER_ID,        // Your user ID from x402 dashboard
-  gatewayUrl: process.env.X402_GATEWAY_URL || 'https://gateway.x402.io', // x402 Gateway URL
+  gatewayUrl: process.env.X402_GATEWAY_URL || '${config.backendUrl || 'https://x402-manager-backend.vercel.app'}/api/gateway', // x402 Gateway URL
   upstreamUrl: process.env.UPSTREAM_URL || 'http://localhost:3000', // Your actual API
   timeout: ${config.timeout || 30000},
 };
